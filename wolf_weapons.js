@@ -8,12 +8,12 @@
   const MAP = {
     /* кадр 1:3 проверен: это чистый ствол в руках. Остальные ячейки листа —
        кадры вспышек, они и давали «жёлтый фонтан» вместо оружия. */
-    rifle:   { row: 1, idle: 3, fire: 3, scale: 1.00, glow: null },
-    shotgun: { row: 1, idle: 3, fire: 3, scale: 1.16, glow: '255,200,120' },
-    smg:     { row: 1, idle: 3, fire: 3, scale: 0.92, glow: '140,255,180' },
-    laser:   { row: 1, idle: 3, fire: 3, scale: 1.02, glow: '255,120,225' },
-    rocket:  { row: 1, idle: 3, fire: 3, scale: 1.20, glow: '255,170,80' },
-    plasma:  { row: 1, idle: 3, fire: 3, scale: 1.06, glow: '175,150,255' }
+    rifle:   { row: 1, idle: 1, fire: 1, scale: 1.00, glow: null },
+    shotgun: { row: 1, idle: 1, fire: 1, scale: 1.16, glow: '255,200,120' },
+    smg:     { row: 1, idle: 1, fire: 1, scale: 0.92, glow: '140,255,180' },
+    laser:   { row: 1, idle: 1, fire: 1, scale: 1.02, glow: '255,120,225' },
+    rocket:  { row: 1, idle: 1, fire: 1, scale: 1.20, glow: '255,170,80' },
+    plasma:  { row: 1, idle: 1, fire: 1, scale: 1.06, glow: '175,150,255' }
   };
 
   let sheet = null, ready = false;
