@@ -1,0 +1,1245 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Aliens Shooter — 3D от первого лица: ксеноморфы</title>
+<style>
+  html,body{margin:0;height:100%;background:#04060c;overflow:hidden;
+    font-family:"Segoe UI",system-ui,sans-serif;color:#dfe9ff;touch-action:none;user-select:none;}
+  canvas{display:block;position:fixed;inset:0;}
+  #hud{position:fixed;inset:0;pointer-events:none;}
+  .hp{position:absolute;left:14px;top:14px;width:min(46vw,240px);}
+  .bar{height:12px;border-radius:7px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);overflow:hidden;}
+  .bar>i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff4f6d,#ff9a5c);transition:width .12s;}
+  .boss{position:absolute;left:50%;top:40px;transform:translateX(-50%);width:min(70vw,420px);text-align:center;display:none;}
+  .boss .nm{font-size:11px;letter-spacing:.24em;color:#c9ff5a;margin-bottom:4px;text-shadow:0 0 10px rgba(201,255,90,.6);}
+  .boss .bar>i{background:linear-gradient(90deg,#8dff72,#c9ff5a);}
+  .hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;font-size:9px;letter-spacing:.18em;color:#4c5776;}
+  .cos{position:absolute;right:16px;top:16px;font-size:10px;letter-spacing:.14em;color:#7fd0ff;}
+  .wbar{position:absolute;right:9px;top:50%;transform:translateY(-46%);
+    display:flex;flex-direction:column;gap:7px;pointer-events:auto;}
+  .wchip{position:relative;width:46px;height:46px;border-radius:11px;background:rgba(9,16,23,.78);
+    border:1px solid rgba(110,180,220,.20);transition:.15s;overflow:hidden;opacity:.72;}
+  .wchip img{position:absolute;left:3px;top:3px;width:40px;height:40px;display:block;object-fit:contain;image-rendering:pixelated;}
+  .wchip .a{position:absolute;right:4px;bottom:2px;font-size:9px;letter-spacing:.04em;color:#7e9db1;}
+  .wchip.on{opacity:1;border-color:#6ff0ff;background:rgba(16,44,58,.92);box-shadow:0 0 14px rgba(110,240,255,.45);}
+  .wchip.on .a{color:#c8f4ff;}
+  .secbar{position:absolute;left:14px;bottom:34px;display:flex;gap:6px;pointer-events:auto;}
+  .secbar div{width:34px;padding:3px 0;text-align:center;font-size:10px;border-radius:7px;
+    background:rgba(10,18,26,.7);border:1px solid rgba(110,180,220,.22);color:#7e9db1;transition:.15s;}
+  .secbar div.on{border-color:#ffb45c;color:#ffd9a8;background:rgba(46,32,18,.85);}
+  .dmg{position:absolute;left:14px;bottom:18px;font-size:9px;letter-spacing:.14em;color:#6f8ea3;}
+  .embedded .secbar,.embedded .dmg,.embedded .hint{display:none!important;}
+  #pause3d{position:absolute;right:12px;top:12px;width:38px;height:38px;border-radius:10px;
+    background:rgba(10,18,26,.8);border:1px solid rgba(110,180,220,.3);color:#9fe8ff;
+    font-size:13px;letter-spacing:.08em;pointer-events:auto;}
+</style>
+<script src="sprites.js"></script>
+<script src="front_sprites.js"></script>
+<script src="weapon_fp2.js?v=9"></script>
+<script src="wolf_weapons.js?v=1"></script>
+</head>
+<body>
+<div id="errBox" style="display:none;position:fixed;left:8px;right:8px;top:70px;z-index:9999;
+  padding:10px 12px;border-radius:10px;background:rgba(60,8,14,.94);border:1px solid #ff5a7a;
+  color:#ffd7de;font:12px/1.45 monospace;white-space:pre-wrap"></div>
+<script>
+window.__fatal = function (msg) {
+  var el = document.getElementById('errBox');
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = 'ОШИБКА 3D\n' + msg;
+  try { parent.postMessage({ type: 'boss3d:error', msg: String(msg) }, '*'); } catch (e) {}
+};
+window.onerror = function (m, src, line, col, err) {
+  window.__fatal(m + '\n' + (src || '') + ':' + line + (err && err.stack ? '\n' + err.stack.split('\n').slice(0,3).join('\n') : ''));
+  return false;
+};
+window.addEventListener('unhandledrejection', function (e) {
+  window.__fatal('promise: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+});
+</script>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div class="hp"><div class="bar"><i id="hp"></i></div></div>
+  <div class="boss" id="bossBox"><div class="nm" id="bossName">СТРАЖ СЕКТОРА</div><div class="bar"><i id="bossHp"></i></div></div>
+  <div class="secbar" id="secbar"></div>
+  <div class="dmg" id="dmg">ИЗНОС 0%</div>
+  <div class="cos" id="fps">—</div>
+  <button id="pause3d">II</button>
+  <div class="wbar" id="wbar"></div>
+  <div class="hint">веди пальцем — идёшь · камера и огонь сами</div>
+</div>
+<script>
+"use strict";
+/* --- хелперы, которые ждёт sprites.js --- */
+const TAU = Math.PI * 2;
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+const cv = document.getElementById('c');
+const mainCtx = cv.getContext('2d', { alpha: false });
+let ctx = mainCtx;                 // переключаем на буфер, чтобы спрайты жили в той же сетке
+const off = document.createElement('canvas');
+const octx = off.getContext('2d', { alpha: false });
+let VW = 0, VH = 0, DPR = Math.min(2, window.devicePixelRatio || 1);
+let BW = 0, BH = 0;                 // буфер рейкастера в «пиксельном» разрешении
+const PIX = 2;                       // каждый пиксель сцены = 2×2 экранных: единый пиксельный стиль
+let img = null, u32 = null;
+
+function resize() {
+  VW = Math.max(160, window.innerWidth | 0);
+  VH = Math.max(200, window.innerHeight | 0);
+  cv.width = Math.round(VW * DPR); cv.height = Math.round(VH * DPR);
+  cv.style.width = VW + 'px'; cv.style.height = VH + 'px';
+  BW = Math.max(120, Math.round(VW / PIX));
+  BH = Math.max(160, Math.round(VH / PIX));
+  off.width = BW; off.height = BH;
+  img = octx.createImageData(BW, BH);
+  u32 = new Uint32Array(img.data.buffer);
+}
+addEventListener('resize', resize);
+
+/* ---------- карта арены ---------- */
+const MAP = [
+  "11111111111111111111",
+  "1..................1",
+  "1..2....1....3.....1",
+  "1..2....1....3.....1",
+  "1..................1",
+  "1.....1......1.....1",
+  "1.....1......1.....1",
+  "1..................1",
+  "1........1.........1",
+  "1..................1",
+  "1..2.........3.....1",
+  "1..2.........3.....1",
+  "1..................1",
+  "1.....1....1.......1",
+  "1.....1....1.......1",
+  "1..................1",
+  "1..................1",
+  "1..................1",
+  "1..................1",
+  "11111111111111111111"
+];
+const MW = MAP[0].length, MH = MAP.length;
+const cellAt = (x, y) => (x < 0 || y < 0 || x >= MW || y >= MH) ? 1 : (MAP[y][x] === '.' ? 0 : (MAP[y][x] === '1' ? 1 : 2));
+
+/* ---------- игрок и босс ---------- */
+const P = { x: 10, y: 15.5, a: -Math.PI / 2, hp: 100, cd: 0, hitT: 0, bob: 0, muzzle: 0 };
+const QS = new URLSearchParams(location.search);
+const EMBEDDED = QS.get('embedded') === '1';
+const BOSS_KIND = QS.get('boss') || 'boss';
+const SECTOR_PARAM = parseInt(QS.get('sector') || '1', 10);
+const HP_PARAM = parseInt(QS.get('hp') || '700', 10);
+const LOAD_W = (QS.get('w') || 'rifle,shotgun').split(',').filter(Boolean);
+const LOAD_A = (QS.get('a') || '-1,40').split(',').map(n => parseInt(n, 10));
+const CUR_PARAM = QS.get('cur') || LOAD_W[0];
+const PHP_PARAM = parseFloat(QS.get('php') || '100');
+const PMAX_PARAM = parseFloat(QS.get('pmax') || '100');
+const SHORT = { rifle: 'В', shotgun: 'Д', smg: 'А', laser: 'Л', rocket: 'Р', plasma: 'П' };
+const AMMO = {};
+LOAD_W.forEach((k, i) => { AMMO[k] = (LOAD_A[i] === undefined || isNaN(LOAD_A[i])) ? 40 : LOAD_A[i]; });
+let OVER = false;
+let PAUSED = false;
+
+function postParent(type, extra) {
+  if (window.parent && window.parent !== window) {
+    try { window.parent.postMessage(Object.assign({ type: type }, extra || {}), '*'); } catch (e) {}
+  }
+}
+const BOSS_NAMES = { boss: 'СТРАЖ СЕКТОРА', matka: 'МАТКА УЛЬЯ', matriarch: 'МАТЬ УЛЬЯ' };
+const B = { x: 10, y: 5.5, hp: 700, maxHp: 700, cd: 2, alive: true, flash: 0, r: 0.8, t: 0,
+            phase: 1, mineCd: 3, summonCd: 6 };
+const mobs = [];          // призванные ползуны
+const mines = [];         // мины второй фазы
+const bullets = [], shots = [], parts = [];
+const pickups = [];        // патроны и аптечки на полу
+/* живая толпа для оценки спрайтов от первого лица */
+const ENEMIES = [
+  { type: 'tank',    x: 13.0, y: 12.0, h: 2.1 },
+  { type: 'grunt',   x: 7.2,  y: 11.2, h: 1.55 },
+  { type: 'shooter', x: 11.6, y: 9.6,  h: 1.6 },
+  { type: 'swarm',   x: 8.6,  y: 13.0, h: 1.05 },
+  { type: 'grunt',   x: 6.4,  y: 7.4,  h: 1.5 }
+];
+
+/* ---------- процедурные текстуры: панели, трубы, провода, износ ---------- */
+const TS = 128;
+
+function makeTex(fn) {
+  const c = document.createElement('canvas');
+  c.width = c.height = TS;
+  const g = c.getContext('2d');
+  fn(g);
+  const d = g.getImageData(0, 0, TS, TS).data;
+  const out = new Uint32Array(TS * TS);
+  for (let i = 0; i < TS * TS; i++) {
+    out[i] = (255 << 24) | (d[i * 4 + 2] << 16) | (d[i * 4 + 1] << 8) | d[i * 4];
+  }
+  return out;
+}
+
+function rng(seed) {
+  let s = seed | 0 || 1;
+  return () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+}
+
+/* горизонтальная труба поперёк текстуры, чтобы тайлилась */
+function pipeH(g, y, h, tint) {
+  const pg = g.createLinearGradient(0, y, 0, y + h);
+  pg.addColorStop(0, tint[0]);
+  pg.addColorStop(0.35, tint[1]);
+  pg.addColorStop(1, tint[2]);
+  g.fillStyle = pg;
+  g.fillRect(0, y, TS, h);
+  g.fillStyle = 'rgba(255,255,255,0.16)';
+  g.fillRect(0, y + 1, TS, Math.max(1, h * 0.16));
+  g.fillStyle = 'rgba(0,0,0,0.34)';
+  g.fillRect(0, y + h - Math.max(1, h * 0.2), TS, Math.max(1, h * 0.2));
+}
+
+/* вертикальная труба */
+function pipeV(g, x, w, tint) {
+  const pg = g.createLinearGradient(x, 0, x + w, 0);
+  pg.addColorStop(0, tint[2]);
+  pg.addColorStop(0.35, tint[1]);
+  pg.addColorStop(1, tint[0]);
+  g.fillStyle = pg;
+  g.fillRect(x, 0, w, TS);
+  g.fillStyle = 'rgba(255,255,255,0.14)';
+  g.fillRect(x + 1, 0, Math.max(1, w * 0.16), TS);
+}
+
+/* хомуты на трубе */
+function clamps(g, count, y, h) {
+  g.fillStyle = 'rgba(20,28,36,0.85)';
+  for (let i = 0; i < count; i++) {
+    const x = (TS / count) * i + 6;
+    g.fillRect(x, y - 2, 5, h + 4);
+    g.fillStyle = 'rgba(190,215,235,0.25)';
+    g.fillRect(x, y - 2, 5, 1.4);
+    g.fillStyle = 'rgba(20,28,36,0.85)';
+  }
+}
+
+/* пучок проводов, провисающий между хомутами */
+function wires(g, R, n, yBase) {
+  const cols = ['#1a222a', '#241a18', '#101820', '#2a2418'];
+  for (let w = 0; w < n; w++) {
+    const y = yBase + w * 5 + R() * 2;
+    const sag = 4 + R() * 5;
+    const col = cols[(w + Math.floor(R() * 4)) % cols.length];
+    for (const pass of [0, 1]) {
+      g.strokeStyle = pass ? 'rgba(190,215,235,0.22)' : col;
+      g.lineWidth = pass ? 0.9 : 2.6;
+      g.beginPath();
+      g.moveTo(0, y + (pass ? -0.6 : 0));
+      g.quadraticCurveTo(TS / 2, y + sag * 2, TS, y + (pass ? -0.6 : 0));
+      g.stroke();
+    }
+  }
+}
+
+/* распредкоробка */
+function junctionBox(g, x, y) {
+  const bg = g.createLinearGradient(x, y, x, y + 18);
+  bg.addColorStop(0, '#5b6f7e');
+  bg.addColorStop(1, '#232f39');
+  g.fillStyle = bg;
+  g.roundRect ? g.beginPath() : null;
+  g.beginPath();
+  g.roundRect(x, y, 20, 18, 2);
+  g.fill();
+  g.strokeStyle = 'rgba(0,0,0,0.5)';
+  g.lineWidth = 1.2;
+  g.stroke();
+  g.fillStyle = 'rgba(110,240,255,0.85)';
+  g.beginPath(); g.arc(x + 5, y + 5, 1.6, 0, TAU); g.fill();
+  g.fillStyle = 'rgba(255,120,90,0.85)';
+  g.beginPath(); g.arc(x + 11, y + 5, 1.6, 0, TAU); g.fill();
+}
+
+/* слой разрушения: 0 — целый борт, 1 — развалины */
+function damageLayer(g, R, dmg, hot) {
+  if (dmg <= 0.02) return;
+
+  /* гарь и копоть */
+  const scorch = Math.round(2 + dmg * 7);
+  for (let i = 0; i < scorch; i++) {
+    const x = R() * TS, y = R() * TS, r = 8 + R() * 26;
+    const sg = g.createRadialGradient(x, y, 0, x, y, r);
+    sg.addColorStop(0, 'rgba(8,10,12,' + (0.32 * dmg).toFixed(2) + ')');
+    sg.addColorStop(1, 'rgba(8,10,12,0)');
+    g.fillStyle = sg;
+    g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+  }
+
+  /* трещины */
+  const cracks = Math.round(2 + dmg * 8);
+  for (let i = 0; i < cracks; i++) {
+    let x = R() * TS, y = R() * TS;
+    const steps = 3 + Math.round(R() * 5);
+    const pts = [[x, y]];
+    const dir = R() * TAU;
+    for (let k = 0; k < steps; k++) {
+      x += Math.cos(dir + (R() - 0.5) * 1.6) * (4 + R() * 9);
+      y += Math.sin(dir + (R() - 0.5) * 1.6) * (4 + R() * 9);
+      pts.push([x, y]);
+    }
+    for (const pass of [0, 1]) {
+      g.strokeStyle = pass ? 'rgba(190,215,235,0.22)' : 'rgba(4,7,10,0.75)';
+      g.lineWidth = pass ? 0.9 : 1.8;
+      g.beginPath();
+      g.moveTo(pts[0][0], pts[0][1] + (pass ? -0.8 : 0));
+      for (let k = 1; k < pts.length; k++) g.lineTo(pts[k][0], pts[k][1] + (pass ? -0.8 : 0));
+      g.stroke();
+    }
+  }
+
+  /* вырванная панель */
+  if (dmg > 0.45 && R() < 0.9) {
+    const w = 24 + R() * 34, h = 20 + R() * 34;
+    const x = R() * (TS - w), y = R() * (TS - h);
+    g.fillStyle = 'rgba(5,8,11,0.92)';
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + w * (0.6 + R() * 0.4), y + R() * 4);
+    g.lineTo(x + w, y + h * (0.5 + R() * 0.5));
+    g.lineTo(x + w * (0.3 + R() * 0.4), y + h);
+    g.lineTo(x + R() * 5, y + h * (0.4 + R() * 0.4));
+    g.closePath();
+    g.fill();
+    g.strokeStyle = 'rgba(160,195,220,0.30)';
+    g.lineWidth = 1.4;
+    g.stroke();
+  }
+
+  /* висящий кабель с разъёмом */
+  if (dmg > 0.3 && R() < 0.85) {
+    const x = R() * TS, y = 10 + R() * (TS * 0.4);
+    const len = 30 + R() * 50;
+    g.strokeStyle = '#141c24';
+    g.lineWidth = 3.4;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.bezierCurveTo(x + 14, y + len * 0.5, x - 12, y + len * 0.75, x + 2, y + len);
+    g.stroke();
+    g.strokeStyle = 'rgba(190,215,235,0.20)';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(x - 0.8, y);
+    g.bezierCurveTo(x + 13, y + len * 0.5, x - 13, y + len * 0.75, x + 1, y + len);
+    g.stroke();
+    g.fillStyle = '#2a3742';
+    g.fillRect(x - 3, y + len - 2, 8, 7);
+  }
+
+  /* искры и мусор */
+  const junk = Math.round(dmg * 40);
+  for (let i = 0; i < junk; i++) {
+    g.fillStyle = R() < 0.5 ? 'rgba(0,0,0,0.5)' : 'rgba(170,200,220,0.18)';
+    g.fillRect(R() * TS, R() * TS, 1 + R() * 2, 1 + R() * 2);
+  }
+  /* огонёк пробоя */
+  if (hot && dmg > 0.6 && R() < 0.5) {
+    const x = R() * TS, y = R() * TS;
+    const hg = g.createRadialGradient(x, y, 0, x, y, 14);
+    hg.addColorStop(0, 'rgba(255,170,90,0.55)');
+    hg.addColorStop(1, 'rgba(255,120,40,0)');
+    g.fillStyle = hg;
+    g.beginPath(); g.arc(x, y, 14, 0, TAU); g.fill();
+  }
+}
+
+/* ---------- стена ---------- */
+function wallTex(kind, dmg, seed) {
+  const R = rng(seed);
+  return makeTex(g => {
+    // база — светлее, чем было
+    const base = g.createLinearGradient(0, 0, 0, TS);
+    base.addColorStop(0, '#5a7085');
+    base.addColorStop(0.42, '#40535f');
+    base.addColorStop(1, '#26343d');
+    g.fillStyle = base;
+    g.fillRect(0, 0, TS, TS);
+
+    // панельные швы
+    g.strokeStyle = 'rgba(200,225,245,0.22)';
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(0, TS * 0.5); g.lineTo(TS, TS * 0.5); g.stroke();
+    g.beginPath(); g.moveTo(0, TS * 0.02); g.lineTo(TS, TS * 0.02); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,0.45)';
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(0, TS * 0.5 + 3); g.lineTo(TS, TS * 0.5 + 3); g.stroke();
+    for (let x = 0; x <= TS; x += 32) {
+      g.strokeStyle = 'rgba(0,0,0,0.32)';
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, TS); g.stroke();
+      g.strokeStyle = 'rgba(210,235,255,0.12)';
+      g.beginPath(); g.moveTo(x + 2, 0); g.lineTo(x + 2, TS); g.stroke();
+    }
+    // заклёпки
+    g.fillStyle = 'rgba(205,230,250,0.35)';
+    for (let x = 8; x < TS; x += 32) {
+      for (const y of [10, TS * 0.5 - 10, TS * 0.5 + 12, TS - 12]) {
+        g.beginPath(); g.arc(x, y, 1.6, 0, TAU); g.fill();
+      }
+    }
+
+    // трубы
+    if (kind === 'plain') {
+      pipeH(g, 24, 11, ['#9db2c2', '#5e7284', '#1d2831']);
+      clamps(g, 3, 24, 11);
+      pipeV(g, 96, 8, ['#93a8b8', '#54687a', '#1a242d']);
+    } else if (kind === 'glow') {
+      // светящаяся полоса в панели
+      g.fillStyle = 'rgba(90,225,255,0.85)';
+      g.fillRect(0, 62, TS, 4);
+      g.globalAlpha = 0.30;
+      g.fillRect(0, 56, TS, 16);
+      g.globalAlpha = 1;
+      pipeH(g, 92, 9, ['#a8bccb', '#65798a', '#1e2a33']);
+      clamps(g, 2, 92, 9);
+      pipeV(g, 20, 7, ['#9bb0c0', '#5a6e80', '#1b252e']);
+    } else {
+      // жёлтая предупреждающая разметка
+      g.save();
+      g.beginPath(); g.rect(0, 96, TS, 18); g.clip();
+      g.fillStyle = 'rgba(255,190,80,0.55)';
+      g.fillRect(0, 96, TS, 18);
+      g.fillStyle = 'rgba(30,26,20,0.65)';
+      for (let i = -TS; i < TS * 2; i += 20) {
+        g.beginPath();
+        g.moveTo(i, 114); g.lineTo(i + 10, 96); g.lineTo(i + 18, 96); g.lineTo(i + 8, 114);
+        g.closePath(); g.fill();
+      }
+      g.restore();
+      pipeH(g, 40, 10, ['#a2b6c5', '#5f7385', '#1d2831']);
+      clamps(g, 3, 40, 10);
+    }
+
+    // провода и коробка
+    wires(g, R, 3, 66);
+    junctionBox(g, 8, 104);
+
+    // износ
+    damageLayer(g, R, dmg, kind !== 'plain');
+  });
+}
+
+function floorTex(dmg, seed) {
+  const R = rng(seed);
+  return makeTex(g => {
+    g.fillStyle = '#2b3a46';
+    g.fillRect(0, 0, TS, TS);
+    // плиты
+    const grd = g.createLinearGradient(0, 0, TS, TS);
+    grd.addColorStop(0, 'rgba(255,255,255,0.06)');
+    grd.addColorStop(1, 'rgba(0,0,0,0.10)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, TS, TS);
+    g.strokeStyle = 'rgba(150,195,225,0.22)';
+    g.lineWidth = 1.6;
+    for (let i = 0; i <= TS; i += 32) {
+      g.beginPath(); g.moveTo(i, 0); g.lineTo(i, TS); g.stroke();
+      g.beginPath(); g.moveTo(0, i); g.lineTo(TS, i); g.stroke();
+    }
+    g.strokeStyle = 'rgba(0,0,0,0.38)';
+    for (let i = 2; i <= TS; i += 32) {
+      g.beginPath(); g.moveTo(i, 0); g.lineTo(i, TS); g.stroke();
+      g.beginPath(); g.moveTo(0, i); g.lineTo(TS, i); g.stroke();
+    }
+    // решётка по центру
+    g.fillStyle = 'rgba(10,16,20,0.55)';
+    g.fillRect(16, 16, 64, 64);
+    g.strokeStyle = 'rgba(150,200,230,0.30)';
+    g.lineWidth = 1;
+    for (let i = 20; i < 80; i += 8) {
+      g.beginPath(); g.moveTo(i, 16); g.lineTo(i, 80); g.stroke();
+    }
+    // износ: трещины, мусор, потёки
+    if (dmg > 0.05) {
+      for (let i = 0; i < 3 + dmg * 10; i++) {
+        const x = R() * TS, y = R() * TS, r = 6 + R() * 22;
+        const sg = g.createRadialGradient(x, y, 0, x, y, r);
+        sg.addColorStop(0, 'rgba(0,0,0,' + (0.30 * dmg).toFixed(2) + ')');
+        sg.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = sg;
+        g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+      }
+      for (let i = 0; i < dmg * 26; i++) {
+        g.fillStyle = 'rgba(190,210,225,0.14)';
+        g.fillRect(R() * TS, R() * TS, 1 + R() * 3, 1 + R() * 2);
+      }
+    }
+  });
+}
+
+function ceilTex(dmg, seed) {
+  const R = rng(seed);
+  return makeTex(g => {
+    g.fillStyle = '#1a242d';
+    g.fillRect(0, 0, TS, TS);
+    g.fillStyle = 'rgba(80,140,180,0.16)';
+    for (let y = 8; y < TS; y += 42) g.fillRect(0, y, TS, 4);
+    g.fillStyle = 'rgba(120,200,255,0.40)';
+    g.fillRect(52, 24, 24, 3);
+    g.fillStyle = 'rgba(120,200,255,0.18)';
+    g.fillRect(44, 20, 40, 14);
+    pipeH(g, 70, 7, ['#7f95a6', '#4a5c6c', '#151f27']);
+    if (dmg > 0.4) {
+      g.strokeStyle = 'rgba(6,10,14,0.85)';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(R() * TS, 0);
+      g.quadraticCurveTo(R() * TS, TS * 0.5, R() * TS, TS);
+      g.stroke();
+    }
+  });
+}
+
+const TEX = {};
+function buildTexSet(dmg) {
+  TEX.wallA = wallTex('plain', dmg, 7);
+  TEX.wallB = wallTex('glow', dmg, 19);
+  TEX.wallC = wallTex('hazard', dmg, 31);
+  TEX.floor = floorTex(dmg, 53);
+  TEX.ceil = ceilTex(dmg, 71);
+}
+
+/* износ корабля: сектор 1 — целый борт, сектор 15 — развалины */
+const MAX_SECTOR_DEMO = 15;
+function damageForSector(i) {
+  return clamp((i - 1) / (MAX_SECTOR_DEMO - 1), 0, 1);
+}
+let SECTOR = 1;
+function setSector(i) {
+  SECTOR = clamp(i | 0, 1, MAX_SECTOR_DEMO);
+  buildTexSet(damageForSector(SECTOR));
+  const el = document.getElementById('fps');
+  if (el) el.dataset.sector = SECTOR;
+}
+buildTexSet(0);
+
+/* ---------- управление ---------- */
+/* Одно касание на весь экран — идём. Камера сама доворачивается на цель,
+   стрельба автоматическая: как в 2D, где игрок только ходит. */
+const touch = { move: null };
+cv.addEventListener('pointerdown', e => {
+  if (!touch.move) touch.move = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+});
+cv.addEventListener('pointermove', e => {
+  if (touch.move && e.pointerId === touch.move.id) {
+    touch.move.dx = e.clientX - touch.move.x;
+    touch.move.dy = e.clientY - touch.move.y;
+  }
+});
+const endT = e => {
+  if (touch.move && e.pointerId === touch.move.id) touch.move = null;
+};
+cv.addEventListener('pointerup', endT);
+cv.addEventListener('pointercancel', endT);
+const keys = {};
+addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (e.key === ' ') fire(); });
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+function fire() {
+  if (CUR !== 'rifle') {
+    if ((AMMO[CUR] || 0) <= 0) {
+      CUR = 'rifle';
+      buildBar();
+      return;
+    }
+    AMMO[CUR] -= 1;
+    const chip = document.querySelector('.wchip[data-k="' + CUR + '"] .a');
+    if (chip) chip.textContent = AMMO[CUR];
+  }
+  shots.push({ x: P.x, y: P.y, vx: Math.cos(P.a) * 16, vy: Math.sin(P.a) * 16, life: 1.0 });
+  P.muzzle = 1;
+  // меньше и короче искр: при автоогне они сливались в кашу
+  for (let i = 0; i < 2; i++) parts.push({
+    x: P.x + Math.cos(P.a) * 0.45, y: P.y + Math.sin(P.a) * 0.45,
+    vx: Math.cos(P.a) * rand(2, 5), vy: Math.sin(P.a) * rand(2, 5), life: 0.13, max: 0.13
+  });
+  if (parts.length > 50) parts.splice(0, parts.length - 50);
+}
+
+/* ---------- логика ---------- */
+function hasLOS(x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const dist = Math.hypot(dx, dy);
+  const steps = Math.ceil(dist / 0.2);
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    if (cellAt(Math.floor(x1 + dx * t), Math.floor(y1 + dy * t)) === 1) return false;
+  }
+  return true;
+}
+
+function step(dt) {
+  let fx = 0, fy = 0;
+  if (touch.move) {
+    const m = Math.min(1, Math.hypot(touch.move.dx, touch.move.dy) / 55);
+    if (m > 0.12) { const a = Math.atan2(touch.move.dy, touch.move.dx); fx = Math.cos(a) * m; fy = Math.sin(a) * m; }
+  }
+  if (keys['w'] || keys['ц']) fy -= 1;
+  if (keys['s'] || keys['ы']) fy += 1;
+  if (keys['a'] || keys['ф']) fx -= 1;
+  if (keys['d'] || keys['в']) fx += 1;
+  if (keys['arrowleft']) P.a -= 1.8 * dt;
+  if (keys['arrowright']) P.a += 1.8 * dt;
+
+  const sp = 3.2 * dt;
+  const nx = P.x + (Math.cos(P.a) * -fy + Math.cos(P.a + Math.PI / 2) * fx) * sp;
+  const ny = P.y + (Math.sin(P.a) * -fy + Math.sin(P.a + Math.PI / 2) * fx) * sp;
+  const pad = 0.28;
+  if (!cellAt(Math.floor(nx + Math.sign(nx - P.x) * pad), Math.floor(P.y))) P.x = nx;
+  if (!cellAt(Math.floor(P.x), Math.floor(ny + Math.sign(ny - P.y) * pad))) P.y = ny;
+  P.bob += Math.hypot(fx, fy) * dt * 9;
+
+  P.cd -= dt;
+  P.hitT = Math.max(0, P.hitT - dt * 2.5);
+  P.muzzle = Math.max(0, P.muzzle - dt * 6);
+
+  /* автонаведение: ствол сам смотрит на ближайшую видимую цель */
+  let aim = null, aimD = 1e9;
+  const cand = [];
+  if (B.alive) cand.push(B);
+  for (const m of mobs) cand.push(m);
+  for (const c of cand) {
+    const d = Math.hypot(c.x - P.x, c.y - P.y);
+    if (d < aimD && hasLOS(P.x, P.y, c.x, c.y)) { aimD = d; aim = c; }
+  }
+  if (aim) {
+    const want = Math.atan2(aim.y - P.y, aim.x - P.x);
+    let diff = want - P.a;
+    while (diff > Math.PI) diff -= TAU;
+    while (diff < -Math.PI) diff += TAU;
+    // доворачиваем плавно, чтобы камера не дёргалась
+    const turn = Math.min(Math.abs(diff), 3.4 * dt) * Math.sign(diff);
+    P.a += turn;
+    // огонь сам, когда цель в конусе и в зоне поражения
+    if (Math.abs(diff) < 0.30 && aimD < 13 && P.cd <= 0) { fire(); P.cd = 0.24; }
+  }
+
+  if (B.alive) {
+    B.t += dt;
+    const frac = B.hp / B.maxHp;
+    B.phase = frac > 0.66 ? 1 : (frac > 0.33 ? 2 : 3);
+
+    const dx = P.x - B.x, dy = P.y - B.y, d = Math.max(0.001, Math.hypot(dx, dy));
+    const speed = B.phase === 1 ? 0.85 : (B.phase === 2 ? 1.05 : 1.25);
+    if (d > 5.2) { B.x += dx / d * speed * dt; B.y += dy / d * speed * dt; }
+
+    /* фаза 1 и 3: веер снарядов */
+    B.cd -= dt;
+    if (B.cd <= 0 && d < 16) {
+      B.cd = B.phase === 3 ? 1.15 : 1.7;
+      const n = B.phase === 3 ? 5 : 3;
+      for (let k = 0; k < n; k++) {
+        const a = Math.atan2(dy, dx) + (k - (n - 1) / 2) * 0.20;
+        bullets.push({ x: B.x, y: B.y, vx: Math.cos(a) * 4.4, vy: Math.sin(a) * 4.4 });
+      }
+    }
+
+    /* фаза 2 и 3: мины */
+    if (B.phase >= 2) {
+      B.mineCd -= dt;
+      if (B.mineCd <= 0 && mines.length < 8) {
+        B.mineCd = B.phase === 3 ? 2.0 : 3.2;
+        const a = rand(0, TAU), r = rand(2, 5);
+        const mx = clamp(B.x + Math.cos(a) * r, 1.5, MW - 1.5);
+        const my = clamp(B.y + Math.sin(a) * r, 1.5, MH - 1.5);
+        if (!cellAt(Math.floor(mx), Math.floor(my))) mines.push({ x: mx, y: my, arm: 1.5, life: 14, t: 0 });
+      }
+    }
+
+    /* фаза 3: призыв ползунов */
+    if (B.phase === 3) {
+      B.summonCd -= dt;
+      if (B.summonCd <= 0 && mobs.length < 4) {
+        B.summonCd = 6;
+        for (let k = 0; k < 2; k++) {
+          const a = rand(0, TAU);
+          mobs.push({ x: B.x + Math.cos(a) * 1.6, y: B.y + Math.sin(a) * 1.6,
+                      type: 'grunt', hp: 30, cd: 0, anim: rand(0, 6) });
+        }
+      }
+    }
+    B.flash = Math.max(0, B.flash - dt * 4);
+  }
+
+  /* мины */
+  for (let i = mines.length - 1; i >= 0; i--) {
+    const m = mines[i];
+    m.t += dt;
+    if (m.arm > 0) m.arm -= dt;
+    m.life -= dt;
+    if (m.arm <= 0 && Math.hypot(m.x - P.x, m.y - P.y) < 0.9) {
+      mines.splice(i, 1);
+      P.hp = Math.max(0, P.hp - 14); P.hitT = 1;
+      for (let k = 0; k < 10; k++) parts.push({
+        x: m.x, y: m.y, vx: rand(-3, 3), vy: rand(-3, 3), life: 0.5, max: 0.5, green: 1
+      });
+      continue;
+    }
+    if (m.life <= 0) mines.splice(i, 1);
+  }
+
+  /* пикапы */
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const pk = pickups[i];
+    pk.t += dt;
+    if (Math.hypot(pk.x - P.x, pk.y - P.y) < 1.0) {
+      if (pk.type === 'med') {
+        P.hp = Math.min(P.maxHp, P.hp + 20);
+      } else {
+        const w = CUR !== 'rifle' ? CUR : (LOAD_W.find(k => k !== 'rifle') || 'rifle');
+        if (w !== 'rifle') {
+          AMMO[w] = Math.min(999, (AMMO[w] || 0) + 12);
+          const chip = document.querySelector('.wchip[data-k="' + w + '"] .a');
+          if (chip) chip.textContent = AMMO[w];
+        }
+      }
+      pickups.splice(i, 1);
+    }
+  }
+
+  /* ползуны */
+  for (const m of mobs) {
+    const dx = P.x - m.x, dy = P.y - m.y, d = Math.max(0.001, Math.hypot(dx, dy));
+    if (d > 0.8) { m.x += dx / d * 1.6 * dt; m.y += dy / d * 1.6 * dt; }
+    m.anim += dt;
+    m.cd -= dt;
+    if (d < 1.0 && m.cd <= 0) { P.hp = Math.max(0, P.hp - 5); P.hitT = 1; m.cd = 0.9; }
+  }
+
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    if (cellAt(Math.floor(b.x), Math.floor(b.y))) { bullets.splice(i, 1); continue; }
+    if (Math.hypot(b.x - P.x, b.y - P.y) < 0.42) { P.hp = Math.max(0, P.hp - 6); P.hitT = 1; bullets.splice(i, 1); }
+  }
+  for (let i = shots.length - 1; i >= 0; i--) {
+    const s = shots[i];
+    s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
+    if (s.life <= 0 || cellAt(Math.floor(s.x), Math.floor(s.y))) { shots.splice(i, 1); continue; }
+    if (B.alive && Math.hypot(s.x - B.x, s.y - B.y) < Math.max(B.r, 1.1)) {
+      B.hp -= 24; B.flash = 1; shots.splice(i, 1);
+      for (let k = 0; k < 5; k++) parts.push({
+        x: B.x + rand(-0.3, 0.3), y: B.y + rand(-0.3, 0.3),
+        vx: rand(-2, 2), vy: rand(-2, 2), life: 0.4, max: 0.4, green: 1
+      });
+      if (B.hp <= 0) {
+        B.alive = false;
+        document.getElementById('bossBox').style.display = 'none';
+        mines.length = 0;
+        mobs.length = 0;
+        if (!OVER) { OVER = true; postParent('boss3d:win', { hp: P.hp, ammo: AMMO }); }
+      }
+      continue;
+    }
+    for (let k = mobs.length - 1; k >= 0; k--) {
+      const m = mobs[k];
+      if (Math.hypot(s.x - m.x, s.y - m.y) < 0.6) {
+        m.hp -= 24; shots.splice(i, 1);
+        for (let q = 0; q < 4; q++) parts.push({
+          x: m.x, y: m.y, vx: rand(-2, 2), vy: rand(-2, 2), life: 0.3, max: 0.3, green: 1
+        });
+        if (m.hp <= 0) {
+          mobs.splice(k, 1);
+          if (Math.random() < 0.55) pickups.push({ x: m.x, y: m.y, type: 'ammo', t: 0 });
+        }
+        break;
+      }
+    }
+  }
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+    if (p.life <= 0) parts.splice(i, 1);
+  }
+}
+
+/* ---------- рендер через буфер пикселей ---------- */
+const FOV = 1.15;
+function render() {
+  const W = BW, H = BH;
+  const dirX = Math.cos(P.a), dirY = Math.sin(P.a);
+  const planeX = -dirY * Math.tan(FOV / 2), planeY = dirX * Math.tan(FOV / 2);
+  const horizon = (H * 0.5) | 0;
+  const zbuf = new Float32Array(W);
+
+  /* пол и потолок */
+  const fTex = TEX.floor, cTex = TEX.ceil;
+  const rX0 = dirX - planeX, rY0 = dirY - planeY;
+  const rX1 = dirX + planeX, rY1 = dirY + planeY;
+  for (let y = horizon + 1; y < H; y++) {
+    const p = y - horizon;
+    const rowDist = (0.5 * H) / p;
+    const stepX = rowDist * (rX1 - rX0) / W;
+    const stepY = rowDist * (rY1 - rY0) / W;
+    let fx = P.x + rowDist * rX0;
+    let fy = P.y + rowDist * rY0;
+    const fog = clamp(1.25 - rowDist / 15, 0.16, 1);
+    const base = y * W, cRow = (H - 1 - y) * W;
+    for (let x = 0; x < W; x++) {
+      const tx = ((fx * TS) | 0) & (TS - 1);
+      const ty = ((fy * TS) | 0) & (TS - 1);
+      const ci = ty * TS + tx;
+      const c = fTex[ci];
+      const r = ((c & 255) * fog) | 0, g = (((c >> 8) & 255) * fog) | 0, b = (((c >> 16) & 255) * fog) | 0;
+      u32[base + x] = 0xff000000 | (b << 16) | (g << 8) | r;
+      const cc = cTex[ci];
+      const r2 = ((cc & 255) * fog * 0.85) | 0, g2 = (((cc >> 8) & 255) * fog * 0.85) | 0, b2 = (((cc >> 16) & 255) * fog * 0.85) | 0;
+      u32[cRow + x] = 0xff000000 | (b2 << 16) | (g2 << 8) | r2;
+      fx += stepX; fy += stepY;
+    }
+  }
+
+  /* стены */
+  for (let x = 0; x < W; x++) {
+    const camX = 2 * x / W - 1;
+    const rdx = dirX + planeX * camX, rdy = dirY + planeY * camX;
+    let mapX = Math.floor(P.x), mapY = Math.floor(P.y);
+    const ddx = Math.abs(1 / (rdx || 1e-9)), ddy = Math.abs(1 / (rdy || 1e-9));
+    const stX = rdx < 0 ? -1 : 1, stY = rdy < 0 ? -1 : 1;
+    let sideX = rdx < 0 ? (P.x - mapX) * ddx : (mapX + 1 - P.x) * ddx;
+    let sideY = rdy < 0 ? (P.y - mapY) * ddy : (mapY + 1 - P.y) * ddy;
+    let side = 0, hit = 0, guard = 0, cell = 0;
+    while (!hit && guard++ < 64) {
+      if (sideX < sideY) { sideX += ddx; mapX += stX; side = 0; }
+      else { sideY += ddy; mapY += stY; side = 1; }
+      cell = cellAt(mapX, mapY);
+      if (cell) hit = 1;
+    }
+    if (!hit) { zbuf[x] = 1e9; continue; }
+    const dist = side === 0 ? (sideX - ddx) : (sideY - ddy);
+    zbuf[x] = dist;
+    const lineH = Math.min(H * 4, H / Math.max(0.05, dist));
+    const y0 = (H - lineH) / 2;
+    let wallX = side === 0 ? P.y + dist * rdy : P.x + dist * rdx;
+    wallX -= Math.floor(wallX);
+    const tx = Math.min(TS - 1, (wallX * TS) | 0);
+    const texArr = cell === 1 ? TEX.wallA : (cell === 2 ? TEX.wallB : TEX.wallC);
+    const fog = clamp(1.3 - dist / 15, 0.14, 1) * (side === 1 ? 0.78 : 1);
+    const ys = Math.max(0, y0 | 0);
+    const y1 = Math.min(H, (y0 + lineH) | 0);
+    const step = TS / lineH;
+    let texPos = (ys - y0) * step;
+    for (let y = ys; y < y1; y++) {
+      const ty = (texPos | 0) & (TS - 1);
+      texPos += step;
+      const c = texArr[ty * TS + tx];
+      const r = ((c & 255) * fog) | 0, g = (((c >> 8) & 255) * fog) | 0, b = (((c >> 16) & 255) * fog) | 0;
+      u32[y * W + x] = 0xff000000 | (b << 16) | (g << 8) | r;
+    }
+  }
+
+  window.__drawnOnce = true;
+  octx.putImageData(img, 0, 0);
+  octx.imageSmoothingEnabled = false;
+
+  // спрайты и оружие рисуем в том же буфере — иначе пиксельный ствол выбивается
+  ctx = octx;
+  octx.setTransform(1, 0, 0, 1, 0, 0);
+  drawSprites(zbuf, W, H, dirX, dirY, planeX, planeY);
+  drawWeapon();
+  ctx = mainCtx;
+
+  // и растягиваем всю сцену на экран без сглаживания
+  mainCtx.setTransform(1, 0, 0, 1, 0, 0);
+  mainCtx.imageSmoothingEnabled = false;
+  // арена задумывалась мрачной, но на телефоне это читается как чёрный экран
+  mainCtx.filter = 'brightness(1.55) contrast(1.06)';
+  mainCtx.drawImage(off, 0, 0, cv.width, cv.height);
+  mainCtx.filter = 'none';
+  mainCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  if (P.hitT > 0.01) {
+    ctx.fillStyle = 'rgba(255,40,80,' + (0.16 * P.hitT).toFixed(2) + ')';
+    ctx.fillRect(0, 0, VW, VH);
+  }
+}
+
+/* осветлённая копия спрайта: босс в тёмном коридоре иначе читается как чёрное пятно */
+const LIT = {};
+function litSprite(spr, key, boost) {
+  const k = key + '_' + boost;
+  if (LIT[k]) return LIT[k];
+  const c = document.createElement('canvas');
+  c.width = spr.sw; c.height = spr.sh;
+  const g = c.getContext('2d');
+  g.filter = 'brightness(' + boost + ') contrast(1.0) saturate(1.1)';
+  g.drawImage(spr.img, spr.sx, spr.sy, spr.sw, spr.sh, 0, 0, spr.sw, spr.sh);
+  const out = { img: c, sx: 0, sy: 0, sw: spr.sw, sh: spr.sh };
+  LIT[k] = out;
+  return out;
+}
+
+function drawSprites(zbuf, W, H, dirX, dirY, planeX, planeY) {
+  const list = [];
+  if (typeof SPR !== 'undefined') {
+    for (const e of ENEMIES) {
+      const useFront = !!(window.FRONT && FRONT[e.type]);
+      const arr = useFront ? FRONT[e.type] : (SPR[e.type] || SPR.grunt);
+      const sp0 = arr[0];
+      const spE = useFront ? litSprite(sp0, e.type, 1.7) : sp0;
+      list.push({ x: e.x, y: e.y, h: e.h, spr: spE, flash: 0,
+                  w: e.h * (spE.sw / spE.sh), front: useFront });
+    }
+  }
+  if (B.alive) {
+    const barr = (window.FRONT && FRONT[BOSS_KIND]) ? FRONT[BOSS_KIND] : (typeof SPR !== 'undefined' ? SPR.boss : null);
+    if (barr) {
+      const sp = (window.FRONT ? litSprite(barr[0], BOSS_KIND, 1.25) : barr[0]);
+      list.push({ x: B.x, y: B.y, h: 2.35, spr: sp, flash: B.flash, bossDebug: true,
+                  w: 2.35 * (sp.sw / sp.sh), front: !!window.FRONT });
+    }
+  }
+  for (const m of mobs) {
+    const arr = (window.FRONT && FRONT[m.type]) ? FRONT[m.type] : null;
+    if (arr) {
+      const spM = litSprite(arr[0], m.type, 1.7);
+      list.push({ x: m.x, y: m.y, h: 1.5, spr: spM, flash: 0,
+                  w: 1.5 * (spM.sw / spM.sh), front: true });
+    }
+  }
+  for (const mi of mines) list.push({ x: mi.x, y: mi.y, h: 0.1, mine: mi });
+  for (const pk of pickups) list.push({ x: pk.x, y: pk.y, h: 0.45, pick: pk, col: pk.type === 'med' ? '#8dff72' : '#ffd166' });
+  for (const b of bullets) list.push({ x: b.x, y: b.y, h: 0.3, col: '#ff7fa0' });
+  for (const s of shots) list.push({ x: s.x, y: s.y, h: 0.16, col: '#8ff6ff' });
+  for (const p of parts) list.push({ x: p.x, y: p.y, h: 0.14, col: p.green ? '#8dff72' : '#a8f0ff', alpha: p.life / p.max });
+
+  const invDet = 1 / (planeX * dirY - dirX * planeY);
+  for (const it of list) it._d = (it.x - P.x) ** 2 + (it.y - P.y) ** 2;
+  list.sort((a, b) => b._d - a._d);
+
+  for (const it of list) {
+    const sx = it.x - P.x, sy = it.y - P.y;
+    const tx = invDet * (dirY * sx - dirX * sy);
+    const ty = invDet * (-planeY * sx + planeX * sy);
+    if (ty <= 0.22) continue;
+    const screenX = (W / 2) * (1 + tx / ty);
+    const size = Math.abs(H / ty) * it.h;
+    const wSize = size * (it.w ? it.w / it.h : 1);
+    const x0 = screenX - wSize / 2;
+    const y0 = (H - size) / 2 + (H / ty) * 0.09;
+    const cm = clamp(Math.floor(screenX), 0, W - 1);
+    if (it.bossDebug) window.__bossDbg = { ty: +ty.toFixed(2), cm: cm, z: +(zbuf[cm] || -1).toFixed(2), screenX: Math.round(screenX), size: Math.round(size) };
+    if (ty > zbuf[cm] + 0.2) continue;
+
+    if (it.pick) {
+      // припасы под ногами разрастаются в огромное пятно — вблизи не рисуем
+      if (ty < 1.25) continue;
+      const cxp = x0 + wSize / 2;
+      const floorY = H / 2 + H / (2 * Math.max(0.6, ty));
+      const pr = Math.max(9, Math.min(26, (H / ty) * 0.16));
+      const cyp = floorY;
+      // мягкое свечение на полу
+      ctx.globalCompositeOperation = 'lighter';
+      const pg = ctx.createRadialGradient(cxp, cyp, 0, cxp, cyp, pr * 1.9);
+      pg.addColorStop(0, it.col);
+      pg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = 0.35 + 0.18 * Math.sin(it.pick.t * 4);
+      ctx.fillStyle = pg;
+      ctx.beginPath(); ctx.arc(cxp, cyp, pr * 1.9, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      // корпус контейнера
+      const bobY = Math.sin(it.pick.t * 2.6) * pr * 0.12;
+      ctx.save();
+      ctx.translate(cxp, cyp - pr * 0.55 + bobY);
+      ctx.fillStyle = 'rgba(9,16,22,0.92)';
+      ctx.strokeStyle = it.col;
+      ctx.lineWidth = 2;
+      const w2 = pr * 0.95, h2 = pr * 0.72;
+      ctx.beginPath();
+      ctx.roundRect(-w2 / 2, -h2 / 2, w2, h2, pr * 0.16);
+      ctx.fill(); ctx.stroke();
+      // значок
+      ctx.strokeStyle = it.col;
+      ctx.lineWidth = Math.max(1.6, pr * 0.12);
+      ctx.beginPath();
+      if (it.pick.type === 'med') {
+        ctx.moveTo(0, -h2 * 0.26); ctx.lineTo(0, h2 * 0.26);
+        ctx.moveTo(-w2 * 0.2, 0); ctx.lineTo(w2 * 0.2, 0);
+      } else {
+        ctx.moveTo(-w2 * 0.18, h2 * 0.2); ctx.lineTo(-w2 * 0.18, -h2 * 0.2);
+        ctx.moveTo(w2 * 0.02, h2 * 0.2); ctx.lineTo(w2 * 0.02, -h2 * 0.2);
+        ctx.moveTo(w2 * 0.22, h2 * 0.2); ctx.lineTo(w2 * 0.22, -h2 * 0.2);
+      }
+      ctx.stroke();
+      ctx.restore();
+      continue;
+    }
+    if (it.mine) {
+      const mi = it.mine;
+      const armed = mi.arm <= 0;
+      const blink = armed ? (0.55 + 0.45 * Math.sin(GameTime() * 9)) : 0.35;
+      ctx.globalAlpha = blink;
+      ctx.globalCompositeOperation = 'lighter';
+      const rr = Math.max(5, size * 1.6);
+      const mg = ctx.createRadialGradient(x0 + wSize / 2, y0 + size, 0, x0 + wSize / 2, y0 + size, rr);
+      mg.addColorStop(0, armed ? 'rgba(255,90,60,0.9)' : 'rgba(255,200,90,0.7)');
+      mg.addColorStop(1, 'rgba(255,60,40,0)');
+      ctx.fillStyle = mg;
+      ctx.beginPath();
+      ctx.arc(x0 + wSize / 2, y0 + size, rr, 0, TAU);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    if (it.spr) {
+      const s = it.spr;
+      const fog = Math.max(0.22, Math.min(1, 1.18 - ty / 15));
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(x0 + wSize / 2, y0 + size * 0.97, wSize * 0.32, size * 0.05, 0, 0, TAU);
+      ctx.fill();
+      // подсветка силуэта: тёмный босс иначе теряется в темноте
+      if (it.front) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.22;
+        const rg = ctx.createRadialGradient(x0 + wSize / 2, y0 + size * 0.55, 0,
+                                            x0 + wSize / 2, y0 + size * 0.55, wSize * 0.8);
+        rg.addColorStop(0, 'rgba(140,215,255,0.5)');
+        rg.addColorStop(1, 'rgba(140,215,255,0)');
+        ctx.fillStyle = rg;
+        ctx.beginPath();
+        ctx.ellipse(x0 + wSize / 2, y0 + size * 0.55, wSize * 0.66, size * 0.52, 0, 0, TAU);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      // билборд: спрайт всегда развёрнут лицом к камере
+      ctx.save();
+      ctx.translate(x0 + wSize / 2, y0 + size * 0.5);
+      if (!it.front) ctx.rotate(Math.atan2(tx, ty));
+      ctx.globalAlpha = fog;
+      ctx.drawImage(s.img, s.sx, s.sy, s.sw, s.sh, -wSize / 2, -size / 2, wSize, size);
+      // подсветка самого спрайта: иначе тёмный силуэт сливается с коридором
+      if (it.front) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.08;
+        ctx.drawImage(s.img, s.sx, s.sy, s.sw, s.sh, -wSize / 2, -size / 2, wSize, size);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      if (it.flash > 0) {
+        ctx.globalAlpha = 0.12 * it.flash;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(x0, y0, wSize, size);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+      }
+    } else {
+      ctx.globalAlpha = it.alpha === undefined ? 1 : it.alpha;
+      ctx.globalCompositeOperation = 'lighter';
+      const rad = Math.max(2, wSize * 0.55);
+      const g = ctx.createRadialGradient(x0 + wSize / 2, y0 + size * 0.5, 0, x0 + wSize / 2, y0 + size * 0.5, rad);
+      g.addColorStop(0, it.col);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x0 + wSize / 2, y0 + size * 0.5, rad, 0, TAU); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+/* ---------- оружие в руках и панель стволов ---------- */
+const PACK_ICON = {
+  rifle:   'assets/weapons/guns/PNG/assaultrifle.png',
+  shotgun: 'assets/weapons/guns/PNG/shotgun.png',
+  smg:     'assets/weapons/guns/PNG/smg.png',
+  laser:   'assets/weapons/guns/PNG/sniper.png'
+};
+const WDATA = LOAD_W.map(k => ({ k, n: SHORT[k] || k[0].toUpperCase(), a: AMMO[k] < 0 ? '∞' : AMMO[k] }));
+let CUR = WDATA.some(w => w.k === CUR_PARAM) ? CUR_PARAM : WDATA[0].k;
+
+function buildBar() {
+  const bar = document.getElementById('wbar');
+  bar.innerHTML = '';
+  for (const w of WDATA) {
+    const d = document.createElement('div');
+    d.className = 'wchip' + (w.k === CUR ? ' on' : '');
+    d.dataset.k = w.k;
+    const im = document.createElement('img');
+    im.src = WeaponFP2.icon(w.k);
+    im.alt = WeaponFP2.specs[w.k].nm;
+    const a = document.createElement('div');
+    a.className = 'a';
+    a.textContent = w.a;
+    d.appendChild(im); d.appendChild(a);
+    d.addEventListener('pointerdown', e => {
+      e.stopPropagation();
+      CUR = w.k;
+      buildBar();
+      SfxUI();
+    });
+    bar.appendChild(d);
+  }
+}
+function SfxUI() {
+  try {
+    if (window.telegram && telegram.HapticFeedback) telegram.HapticFeedback.selectionChanged();
+  } catch (e) {}
+}
+
+function drawWeapon() {
+  // пиксельный лист в стиле Wolfenstein: зелёные рукава под нашего десантника
+  if (window.WolfWeapon && WolfWeapon.ready && WolfWeapon.has(CUR)) {
+    const firing = P.muzzle > 0.05;
+    const fc = WolfWeapon.frame(CUR, false);   // кадр «выстрел» в листе заменяет ствол вспышкой
+    if (fc) {
+      const bob = Math.sin(P.bob) * 6;
+      const prev = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = false;
+      // масштаб от высоты кадра: спрайт обрезан по содержимому
+      let h = BH * 0.26 * WolfWeapon.scale(CUR);
+      let w = h * (fc.sw / fc.sh);
+      const x = BW / 2 - w / 2 + 4;
+      const y = BH - h * 0.86 + bob * 0.25 + (firing ? 3 : 0);
+      ctx.drawImage(fc.img, fc.sx, fc.sy, fc.sw, fc.sh, x, y, w, h);
+      ctx.imageSmoothingEnabled = prev;
+      // вспышка у дула: своя, поверх ствола
+      const mx = x + w * 0.50, my = y + h * 0.30;
+      const gl = WolfWeapon.glow(CUR) || '255,235,170';
+      ctx.globalCompositeOperation = 'lighter';
+      // вспышка маленькая и тёплая: на низком разрешении большой белый шар
+      // превращался в пиксельную кляксу поверх всего кадра
+      const radFlash = w * (0.035 + 0.055 * P.muzzle);
+      const gf = ctx.createRadialGradient(mx, my, 0, mx, my, radFlash);
+      gf.addColorStop(0, 'rgba(255,220,150,' + (0.35 * P.muzzle).toFixed(2) + ')');
+      gf.addColorStop(0.5, 'rgba(' + gl + ',' + (0.10 * P.muzzle).toFixed(2) + ')');
+      gf.addColorStop(1, 'rgba(' + gl + ',0)');
+      ctx.fillStyle = gf;
+      ctx.beginPath(); ctx.arc(mx, my, radFlash, 0, TAU); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      return;
+    }
+  }
+  if (window.PackWeapon && PackWeapon.ready && PackWeapon.has(CUR)) {
+    const f = PackWeapon.frame(CUR, P.muzzle > 0.55 ? 2 : (P.muzzle > 0.05 ? 1 : 0));
+    if (f) {
+      const bob = Math.sin(P.bob) * 6;
+      // ширина по экрану, высота ограничена — у кадров разная пропорция
+      let w = VW * 0.86 * PackWeapon.scale(CUR);
+      let h = w * (f.sh / f.sw);
+      if (h > VH * 0.40) { h = VH * 0.40; w = h * (f.sw / f.sh); }
+      const x = VW - w * 0.78;
+      const y = VH - h * 0.90 + bob * 0.5 + (P.muzzle > 0.05 ? 6 : 0);
+      ctx.drawImage(f.img, f.sx, f.sy, f.sw, f.sh, x, y, w, h);
+      // цветной акцент у дула, чтобы стволы различались
+      const gl = PackWeapon.glow(CUR);
+      if (gl) {
+        const mx = x + w * 0.10, my = y + h * 0.16;
+        ctx.globalCompositeOperation = 'lighter';
+        const rad = w * (0.10 + 0.16 * P.muzzle);
+        const gg = ctx.createRadialGradient(mx, my, 0, mx, my, rad);
+        gg.addColorStop(0, 'rgba(' + gl + ',' + (0.22 + 0.55 * P.muzzle).toFixed(2) + ')');
+        gg.addColorStop(1, 'rgba(' + gl + ',0)');
+        ctx.fillStyle = gg;
+        ctx.beginPath(); ctx.arc(mx, my, rad, 0, TAU); ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      return;
+    }
+  }
+  if (!window.WeaponFP2) return;
+  const f = WeaponFP2.frames(CUR)[P.muzzle > 0.55 ? 2 : (P.muzzle > 0.05 ? 1 : 0)];
+  const bob = Math.sin(P.bob) * 7;
+  // масштаб считаем от высоты кадра: ствол занимает ~45% экрана
+  const k = (VH * 0.46) / f.sh;
+  const w = f.sw * k, h = f.sh * k;
+  const x = VW / 2 - w / 2 + 10 + bob * 0.25;
+  const y = VH - h * 0.96 + bob * 0.5 + (P.muzzle > 0.05 ? 10 : 0);
+  ctx.drawImage(f.img, f.sx, f.sy, f.sw, f.sh, x, y, w, h);
+}
+
+/* ---------- цикл ---------- */
+let last = performance.now(), frames = 0, fpsT = 0;
+function loop(t) {
+  const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  if (!PAUSED) step(dt);
+  render();
+  frames++; fpsT += dt;
+  if (fpsT > 0.5) {
+    document.getElementById('fps').textContent = Math.round(frames / fpsT) + ' FPS';
+    frames = 0; fpsT = 0;
+  }
+  document.getElementById('hp').style.width = Math.max(0, P.hp / P.maxHp * 100) + '%';
+  if (P.hp <= 0 && !OVER) { OVER = true; postParent('boss3d:lose', { hp: 0, ammo: AMMO }); }
+  if (B.alive) {
+    document.getElementById('bossBox').style.display = 'block';
+    document.getElementById('bossHp').style.width = Math.max(0, B.hp / B.maxHp * 100) + '%';
+  }
+  requestAnimationFrame(loop);
+}
+
+const __t0 = performance.now();
+function GameTime() { return (performance.now() - __t0) / 1000; }
+document.getElementById('bossName').textContent = BOSS_NAMES[BOSS_KIND] || 'БОСС';
+
+resize();
+(function initSectorUI() {
+  const bar = document.getElementById('secbar');
+  for (const n of [1, 5, 9, 12, 15]) {
+    const d = document.createElement('div');
+    d.textContent = n;
+    d.dataset.n = n;
+    d.addEventListener('pointerdown', e => { e.stopPropagation(); setSector(n); syncSectorUI(); });
+    bar.appendChild(d);
+  }
+  function syncSectorUI() {
+    for (const el of bar.children) el.classList.toggle('on', +el.dataset.n === SECTOR);
+    document.getElementById('dmg').textContent = 'ИЗНОС ' + Math.round(damageForSector(SECTOR) * 100) + '%';
+  }
+  window.syncSectorUI = syncSectorUI;
+  setSector(EMBEDDED ? SECTOR_PARAM : parseInt((location.search.match(/sector=(\d+)/) || [])[1] || '1', 10));
+  syncSectorUI();
+})();
+Sprites.init();
+if (window.FrontSprites) FrontSprites.init();
+if (EMBEDDED) {
+  document.body.classList.add('embedded');
+  ENEMIES.length = 0;
+  // бой начинается сразу: игрок в глубине зала, босс в шести метрах
+  // строго в центр клетки: на границе луч упирается в соседнюю стену и босса «съедает» z-буфер
+  P.x = 10.5; P.y = 15.5; P.a = -Math.PI / 2;
+  B.x = 10.5; B.y = 7.5;
+  B.maxHp = HP_PARAM; B.hp = HP_PARAM;
+  P.hp = PHP_PARAM; P.maxHp = PMAX_PARAM;
+  // три припаса на старте
+  const spots = [[7.5, 12.5], [12.5, 12.5], [10, 11.2]];
+  spots.forEach(([x, y], i) => pickups.push({ x, y, type: i === 2 ? 'med' : 'ammo', t: rand(0, 6) }));
+}
+buildBar();
+document.getElementById('pause3d').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  PAUSED = !PAUSED;
+  e.currentTarget.textContent = PAUSED ? '▶' : 'II';
+  if (PAUSED) postParent('boss3d:pause');
+});
+requestAnimationFrame(loop);
+</script>
+<script>
+setTimeout(function () {
+  if (!window.__drawnOnce) {
+    window.__fatal('сцена не запустилась за 5 секунд: канвас пуст, скрипты не дошли или упали');
+  }
+}, 5000);
+</script>
+</body>
+</html>

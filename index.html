@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#05060f">
+<title>Aliens Shooter</title>
+<script src="telegram-web-app.js"></script>
+<style>
+:root{--cyan:#4ff0ff;--mag:#ff4fd8;--vio:#8b5cff;--gold:#ffcf4f;--ink:#dfe9ff;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;width:100%;position:fixed;inset:0;overflow:hidden;
+  background:#05060f;color:var(--ink);font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
+  overscroll-behavior:none;touch-action:none;}
+canvas#game{position:fixed;inset:0;display:block;touch-action:none;}
+.screen{position:fixed;inset:0;z-index:20;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:14px;padding:26px;overflow-y:auto;
+  background:radial-gradient(ellipse at 50% 28%,rgba(80,40,160,.42),rgba(5,6,15,.93) 72%);
+  overscroll-behavior:contain;touch-action:pan-y;}
+.screen.active{display:flex;}
+h1.title{margin:0;font-size:clamp(26px,8vw,56px);letter-spacing:.1em;text-transform:uppercase;font-weight:800;
+  background:linear-gradient(180deg,#eafdff,#4ff0ff 58%,#8b5cff);-webkit-background-clip:text;background-clip:text;
+  color:transparent;filter:drop-shadow(0 0 20px rgba(79,240,255,.5));text-align:center;line-height:1.05;}
+h2.title{margin:0 0 6px;font-size:clamp(20px,5.6vw,32px);letter-spacing:.2em;text-transform:uppercase;
+  color:#eaf6ff;text-shadow:0 0 16px rgba(79,240,255,.5);text-align:center;}
+.sub{margin:0 0 8px;font-size:11px;letter-spacing:.42em;text-transform:uppercase;color:#7f8db3;text-align:center;}
+.btn{min-width:min(320px,86vw);padding:14px 22px;font-size:15px;letter-spacing:.15em;text-transform:uppercase;
+  font-weight:700;color:#eaf6ff;background:linear-gradient(180deg,rgba(79,240,255,.16),rgba(139,92,255,.12));
+  border:1px solid rgba(79,240,255,.45);border-radius:12px;cursor:pointer;
+  box-shadow:0 0 20px rgba(79,240,255,.16),inset 0 0 22px rgba(79,240,255,.06);
+  transition:transform .08s,box-shadow .15s,border-color .15s;font-family:inherit;}
+.btn:active{transform:scale(.975);}
+.btn:hover{border-color:var(--cyan);box-shadow:0 0 26px rgba(79,240,255,.38),inset 0 0 24px rgba(79,240,255,.12);}
+.btn[disabled]{opacity:.34;cursor:default;box-shadow:none;border-color:rgba(255,255,255,.14);}
+.btn.ghost{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.18);box-shadow:none;}
+.btn.danger{border-color:rgba(255,79,216,.55);box-shadow:0 0 18px rgba(255,79,216,.18);}
+.btn .hint{display:block;font-size:10px;letter-spacing:.16em;color:#8fa1c8;margin-top:5px;text-transform:none;font-weight:500;}
+.foot{position:fixed;bottom:14px;left:0;right:0;text-align:center;font-size:10px;letter-spacing:.24em;color:#4c5776;}
+
+
+/* ===== главное меню ===== */
+.menu-screen{justify-content:space-between;align-items:center;padding:18px 0 12px;gap:0;overflow:hidden;
+  background:linear-gradient(180deg,rgba(4,8,16,.10) 0%,rgba(4,8,16,.30) 34%,rgba(4,8,16,.72) 58%,rgba(4,8,16,.92) 100%);}
+.menu-screen::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120% 70% at 50% 18%,rgba(30,90,160,.28),transparent 60%),
+             radial-gradient(90% 60% at 50% 100%,rgba(10,30,60,.55),transparent 70%);}
+body.lowq .scanlines{display:none;}
+.scanlines{position:absolute;inset:0;pointer-events:none;opacity:.35;
+  background:repeating-linear-gradient(180deg,rgba(255,255,255,.05) 0 1px,transparent 1px 3px);}
+.menu-head{position:relative;width:100%;display:flex;justify-content:center;align-items:flex-start;padding-top:6px;}
+.logo{text-align:center;line-height:.92;}
+.logo-main{font-size:clamp(38px,12vw,64px);font-weight:900;letter-spacing:.06em;
+  background:linear-gradient(180deg,#f2fdff 0%,#7fe8ff 42%,#3aa8ff 62%,#8b5cff 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 26px rgba(79,240,255,.45));}
+.logo-sub{font-size:clamp(13px,4.2vw,20px);font-weight:800;letter-spacing:.62em;color:#9fd4ff;
+  text-shadow:0 0 18px rgba(79,240,255,.55);margin-top:2px;padding-left:.62em;}
+.coin-badge{position:absolute;right:14px;top:4px;display:flex;align-items:center;gap:6px;
+  padding:7px 12px;border-radius:999px;background:rgba(8,14,28,.82);border:1px solid rgba(255,207,79,.42);
+  color:#ffcf4f;font-weight:700;font-size:13px;box-shadow:0 0 18px rgba(255,207,79,.18);}
+.cb-ic{font-size:14px;}
+.menu-mid{position:relative;flex:1;display:flex;align-items:flex-end;width:100%;padding-bottom:6px;}
+.menu-stats{display:flex;gap:10px;justify-content:center;width:100%;}
+.mstat{flex:1;max-width:104px;text-align:center;padding:7px 4px;border-radius:12px;
+  background:rgba(8,14,28,.62);border:1px solid rgba(79,240,255,.16);backdrop-filter:blur(3px);}
+.mstat b{display:block;font-size:17px;color:#eaf6ff;line-height:1.1;}
+.mstat span{font-size:9px;letter-spacing:.18em;color:#7f8db3;text-transform:uppercase;}
+.menu-actions{position:relative;width:100%;display:flex;flex-direction:column;align-items:center;gap:9px;margin-bottom:10px;}
+.mbtn{display:flex;align-items:center;gap:13px;width:min(420px,90vw);padding:11px 15px;cursor:pointer;
+  border-radius:15px;font-family:inherit;text-align:left;
+  background:linear-gradient(135deg,rgba(22,32,54,.94),rgba(11,17,30,.9));
+  border:1px solid rgba(79,240,255,.26);
+  box-shadow:0 10px 26px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05);
+  transition:transform .1s,border-color .2s,box-shadow .2s;
+  animation:menuIn .45s cubic-bezier(.2,.9,.3,1) both;}
+.mbtn:nth-child(2){animation-delay:.07s;}
+.mbtn:nth-child(3){animation-delay:.14s;}
+.mbtn:active{transform:scale(.98);}
+.mbtn:hover{border-color:rgba(79,240,255,.55);}
+.mbtn .mi{width:40px;height:40px;flex:0 0 40px;border-radius:12px;display:grid;place-items:center;font-size:16px;color:#d9f6ff;
+  background:linear-gradient(180deg,rgba(79,240,255,.22),rgba(139,92,255,.16));border:1px solid rgba(79,240,255,.32);}
+.mbtn .mtxt{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.mbtn .mt{font-size:14px;font-weight:800;letter-spacing:.14em;color:#eaf6ff;}
+.mbtn .mh{font-size:10px;letter-spacing:.04em;color:#8fa1c8;text-transform:none;}
+.mbtn.primary{border-color:rgba(79,240,255,.6);
+  box-shadow:0 0 0 1px rgba(79,240,255,.12),0 14px 36px rgba(30,120,200,.32),inset 0 1px 0 rgba(255,255,255,.1);
+  animation:menuIn .45s cubic-bezier(.2,.9,.3,1) both,pulseGlow 2.8s ease-in-out .6s infinite;}
+.mbtn.primary .mi{background:linear-gradient(180deg,rgba(79,240,255,.45),rgba(139,92,255,.3));}
+.mbtn[disabled]{opacity:.42;cursor:default;animation:none;}
+@keyframes menuIn{0%{opacity:0;transform:translateY(16px) scale(.97);}100%{opacity:1;transform:none;}}
+@keyframes pulseGlow{0%,100%{box-shadow:0 0 0 1px rgba(79,240,255,.12),0 14px 36px rgba(30,120,200,.32),inset 0 1px 0 rgba(255,255,255,.1);}
+  50%{box-shadow:0 0 0 1px rgba(79,240,255,.3),0 16px 44px rgba(60,160,255,.5),inset 0 1px 0 rgba(255,255,255,.14);}}
+.menu-tools{position:relative;display:flex;gap:9px;width:min(420px,90vw);margin-bottom:8px;}
+.mtool{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 4px;cursor:pointer;
+  border-radius:13px;font-family:inherit;background:rgba(8,14,28,.72);border:1px solid rgba(255,255,255,.14);
+  transition:transform .1s,border-color .2s;}
+.mtool:active{transform:scale(.96);}
+.mtool:hover{border-color:rgba(79,240,255,.4);}
+.mtool .ti{font-size:16px;color:#9fe4ff;}
+.mtool .tl{font-size:9px;letter-spacing:.12em;color:#cfe0ff;font-weight:700;}
+.mtool .th{font-size:9px;color:#7f8db3;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.menu-foot{position:relative;font-size:9px;letter-spacing:.22em;color:#4c5776;text-transform:uppercase;text-align:center;padding:0 12px;}
+
+/* HUD */
+#hud{position:fixed;inset:0;z-index:10;pointer-events:none;display:none;}
+#hud.on{display:block;}
+.hpwrap{position:absolute;left:12px;top:12px;width:min(48vw,280px);}
+.bar{height:13px;border-radius:8px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);overflow:hidden;}
+.bar>i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff4f6d,#ff9a5c);transition:width .12s linear;}
+.xpbar{height:6px;margin-top:6px;border-radius:6px;}
+.xpbar>i{background:linear-gradient(90deg,#4ff0ff,#8b5cff);}
+.hptext{font-size:10px;letter-spacing:.14em;color:#9fb0d6;margin-top:4px;}
+.stats{position:absolute;right:12px;top:10px;text-align:right;font-size:12px;letter-spacing:.1em;color:#b9c8e8;line-height:1.5;}
+.stats b{color:var(--gold);}
+#weaponBar{position:absolute;right:10px;bottom:64px;display:flex;flex-direction:column;gap:7px;pointer-events:auto;z-index:12;}
+.wbtn{width:48px;height:48px;border-radius:13px;background:rgba(8,14,30,.78);border:1px solid rgba(255,255,255,.16);
+  display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer;transition:transform .08s,border-color .15s,box-shadow .15s;}
+.wbtn:active{transform:scale(.94);}
+.wbtn.active{border-color:#4ff0ff;box-shadow:0 0 14px rgba(79,240,255,.45),inset 0 0 12px rgba(79,240,255,.15);}
+.wbtn.locked{opacity:.28;}
+@keyframes popIn{0%{transform:scale(.35) translateY(14px);opacity:0}60%{transform:scale(1.18) translateY(0);opacity:1}100%{transform:scale(1)}}
+.wbtn.fresh{animation:popIn .5s cubic-bezier(.2,1.4,.4,1) both;}
+.wbtn.fresh::after{content:'';position:absolute;inset:-3px;border-radius:15px;border:1px solid rgba(255,207,79,.85);
+  animation:freshGlow .9s ease-out 1;}
+@keyframes freshGlow{0%{opacity:1;transform:scale(.9)}100%{opacity:0;transform:scale(1.25)}}
+.wbtn.empty{opacity:.5;border-color:rgba(255,90,90,.4);}
+.wbtn .amm{position:absolute;bottom:-3px;right:-2px;font-size:9px;font-weight:700;color:#ffcf4f;
+  background:rgba(3,6,12,.85);border-radius:5px;padding:1px 4px;letter-spacing:.02em;}
+.wbtn .amm.inf{color:#8dff72;}
+#pauseBtn{position:absolute;right:12px;top:74px;width:44px;height:44px;border-radius:50%;pointer-events:auto;
+  background:rgba(8,14,30,.72);border:1px solid rgba(79,240,255,.4);color:#cfe9ff;font-size:15px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(79,240,255,.2);}
+#roomTag{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;font-size:10px;letter-spacing:.3em;
+  color:#63709a;text-transform:uppercase;opacity:.85;}
+
+/* perks */
+#screen-perk .cards{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:880px;}
+.card{width:min(240px,86vw);padding:18px 14px;border-radius:14px;cursor:pointer;text-align:center;
+  border:1px solid rgba(79,240,255,.4);background:linear-gradient(180deg,rgba(79,240,255,.13),rgba(139,92,255,.09));
+  box-shadow:0 0 22px rgba(79,240,255,.12);transition:transform .1s,box-shadow .15s;}
+.card:hover{transform:translateY(-3px);box-shadow:0 0 30px rgba(79,240,255,.35);}
+.card.off{opacity:.4;cursor:default;filter:grayscale(.6);}
+#screen-shop .cards,#screen-upgrades .cards,#screen-classes .cards{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:880px;}
+.card.max{opacity:.55;border-color:rgba(255,207,79,.5);}
+#winStats,#overStats{text-transform:none;letter-spacing:.05em;font-size:13px;line-height:1.6;max-width:88vw;}
+#tutText{text-transform:none;letter-spacing:.02em;font-size:13px;line-height:1.8;max-width:86vw;text-align:left;}
+#recCards{display:flex;flex-direction:column;gap:8px;max-width:88vw;width:88vw;}
+#recCards .row{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-radius:12px;
+  background:rgba(10,16,30,.8);border:1px solid rgba(79,240,255,.18);font-size:13px;color:#cfe0ff;}
+#recCards .row b{color:#ffcf4f;}
+#recCards .row .d{color:#6f7fa6;font-size:11px;}
+.card .ic{font-size:30px;line-height:1;}
+.card .nm{font-weight:700;margin:10px 0 6px;font-size:14px;letter-spacing:.04em;}
+.card .ds{font-size:12px;color:#9fb0d6;line-height:1.4;}
+.card .lv{font-size:10px;color:#6f7fa6;margin-top:8px;letter-spacing:.14em;}
+
+/* toast */
+#toast{position:fixed;left:50%;top:15%;transform:translateX(-50%);z-index:40;padding:10px 20px;border-radius:999px;
+  background:rgba(8,12,28,.88);border:1px solid rgba(79,240,255,.4);font-size:12px;letter-spacing:.16em;
+  text-transform:uppercase;white-space:normal;text-align:center;line-height:1.4;opacity:0;transition:opacity .25s;
+  pointer-events:none;max-width:78vw;}
+#boss3dOverlay{position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100%;z-index:60;display:none;background:#04060c;}
+#boss3dOverlay.on{display:block;}
+#boss3dFrame{position:absolute;top:0;left:0;width:100%;height:100%;border:0;display:block;}
+#boss3dExit{position:absolute;left:12px;bottom:12px;padding:8px 14px;border-radius:10px;
+  background:rgba(10,18,26,.85);border:1px solid rgba(110,180,220,.35);color:#9fe8ff;
+  font-size:11px;letter-spacing:.12em;font-family:inherit;}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div class="hpwrap">
+    <div class="bar"><i id="hpFill"></i></div>
+    <div class="bar xpbar"><i id="xpFill"></i></div>
+    <div class="hptext"><span id="hpText">100 / 100</span> · УР. <span id="lvlText">1</span></div>
+  </div>
+  <div id="roomTag">СЕКТОР 1</div>
+  <div class="stats">
+    <div>⛁ <b id="coinText">0</b></div>
+    <div>☠ <b id="killText">0</b></div>
+    <div id="weapText" style="font-size:11px;color:#9fd8c8">ВИНТОВКА</div>
+    <div id="objText" style="font-size:11px;color:#ffcf4f;margin-top:2px"></div>
+  </div>
+  <div id="weaponBar"></div>
+  <button id="pauseBtn">II</button>
+</div>
+
+<div class="screen active menu-screen" id="screen-menu">
+  <div class="scanlines"></div>
+
+  <div class="menu-head">
+    <div class="logo">
+      <div class="logo-main">ALIENS</div>
+      <div class="logo-sub">SHOOTER</div>
+    </div>
+    <div class="coin-badge"><span class="cb-ic">⛁</span><span id="mCoins">0</span></div>
+  </div>
+
+  <div class="menu-mid">
+    <div class="menu-stats">
+      <div class="mstat"><b id="mBest">0</b><span>сектор</span></div>
+      <div class="mstat"><b id="mRuns">0</b><span>забегов</span></div>
+      <div class="mstat"><b id="mWins">0</b><span>побед</span></div>
+    </div>
+  </div>
+
+  <div class="menu-actions">
+    <button class="mbtn primary" id="btnNew">
+      <span class="mi">▶</span>
+      <span class="mtxt"><span class="mt">НОВЫЙ ЗАБЕГ</span><span class="mh">15 секторов · 3 босса · ~10 минут</span></span>
+    </button>
+    <button class="mbtn" id="btnContinue">
+      <span class="mi">⟲</span>
+      <span class="mtxt"><span class="mt">ПРОДОЛЖИТЬ</span><span class="mh" id="contHint">нет сохранения</span></span>
+    </button>
+    <button class="mbtn" id="btnDaily">
+      <span class="mi">◈</span>
+      <span class="mtxt"><span class="mt">ЗАБЕГ ДНЯ</span><span class="mh" id="dailyHint">сегодня ещё не играл</span></span>
+    </button>
+  </div>
+
+  <div class="menu-tools">
+    <button class="mtool" id="btnUpgrades"><span class="ti">⚙</span><span class="tl">УЛУЧШЕНИЯ</span><span class="th" id="metaHint">0 ⛁</span></button>
+    <button class="mtool" id="btnRecords"><span class="ti">🏆</span><span class="tl">РЕКОРДЫ</span><span class="th" id="recHint">пока пусто</span></button>
+    <button class="mtool" id="btnSettings"><span class="ti">☰</span><span class="tl">НАСТРОЙКИ</span><span class="th">&nbsp;</span></button>
+  </div>
+
+  <div class="menu-foot" id="footStats">стик · автострельба · патроны в ящиках</div>
+</div>
+
+<div class="screen" id="screen-classes">
+  <h2 class="title">Выбор десанта</h2>
+  <div class="sub">стартовое снаряжение забега</div>
+  <div class="cards" id="classCards"></div>
+  <button class="btn ghost" id="btnClassBack">Назад</button>
+</div>
+
+<div class="screen" id="screen-upgrades">
+  <h2 class="title">Улучшения</h2>
+  <div class="sub">постоянные бонусы · банк: <span id="upCoins">0</span> ⛁</div>
+  <div class="cards" id="upCards"></div>
+  <button class="btn" id="btnUpBack">Назад</button>
+</div>
+
+<div class="screen" id="screen-settings">
+  <h2 class="title">Настройки</h2>
+  <button class="btn ghost toggle" id="tgSound">Звук: ВКЛ</button>
+  <button class="btn ghost toggle" id="tgRun">Стрельба на ходу: ВЫКЛ</button>
+  <button class="btn ghost toggle" id="tgShake">Тряска камеры: ВКЛ</button>
+  <button class="btn ghost toggle" id="tgVibe">Вибрация: ВКЛ</button>
+  <button class="btn ghost toggle" id="tgJoy">Размер стика: СРЕДНИЙ</button>
+  <button class="btn ghost toggle" id="tgQuality">Графика: ВЫСОКАЯ</button>
+  <button class="btn ghost toggle" id="tgBoss3D">Боссы в 3D: ВКЛ</button>
+  <button class="btn ghost" id="btnTest3D">Проверить 3D-арену</button>
+  <button class="btn ghost toggle" id="tgCloud">Облачное сохранение: —</button>
+  <button class="btn danger" id="btnReset">Сбросить прогресс</button>
+  <button class="btn" id="btnBack">Назад</button>
+</div>
+
+<div class="screen" id="screen-pause">
+  <h2 class="title">Пауза</h2>
+  <div class="sub" id="pauseWeapon" style="margin-bottom:2px">оружие: винтовка</div>
+  <button class="btn" id="btnResume">Продолжить</button>
+  <button class="btn ghost" id="btnPauseShop">Магазин</button>
+  <button class="btn ghost" id="btnPauseSettings">Настройки</button>
+  <button class="btn ghost" id="btnToMenu">В главное меню</button>
+</div>
+
+<div class="screen" id="screen-shop">
+  <h2 class="title">Магазин</h2>
+  <div class="sub">баланс: <span id="shopCoins">0</span> ⛁</div>
+  <div class="cards" id="shopCards"></div>
+  <button class="btn" id="btnShopClose">Дальше</button>
+  <button class="btn ghost" id="btnShopReroll">Обновить за 15 ⛁</button>
+</div>
+
+<div class="screen" id="screen-perk">
+  <h2 class="title">Улучшение</h2>
+  <div class="sub">выбери один модуль</div>
+  <div class="cards" id="perkCards"></div>
+</div>
+
+<div class="screen" id="screen-win">
+  <h2 class="title" style="color:#9dffd6;text-shadow:0 0 24px rgba(120,255,200,.65)">Станция зачищена</h2>
+  <div class="sub" id="winStats">—</div>
+  <button class="btn ghost" id="btnShareWin">Поделиться победой</button>
+  <button class="btn" id="btnWinMenu">В главное меню</button>
+</div>
+
+<div class="screen" id="screen-records">
+  <h2 class="title" style="font-size:22px">Рекорды</h2>
+  <div class="cards" id="recCards"></div>
+  <button class="btn" id="btnRecBack">Назад</button>
+</div>
+
+<div class="screen" id="screen-tutorial">
+  <h2 class="title" style="font-size:22px">Как играть</h2>
+  <div class="sub" id="tutText">—</div>
+  <button class="btn" id="btnTutOk">ПОЕХАЛИ</button>
+</div>
+
+<div class="screen" id="screen-contract">
+  <div class="sub">перед боссом · выбери условие</div>
+  <h2 class="title" style="font-size:22px">КОНТРАКТ</h2>
+  <div class="cards" id="contractCards"></div>
+</div>
+
+<div class="screen" id="screen-over">
+  <h2 class="title" style="color:#ff6f8a;text-shadow:0 0 20px rgba(255,80,120,.6)">Вы погибли</h2>
+  <div class="sub" id="overStats">—</div>
+  <button class="btn" id="btnRetry">Заново</button>
+  <button class="btn ghost" id="btnOverUp">Улучшения · <span id="overMeta">0</span> ⛁</button>
+  <button class="btn ghost" id="btnShare">Поделиться результатом</button>
+  <button class="btn ghost" id="btnOverMenu">В главное меню</button>
+</div>
+
+<div id="toast"></div>
+
+<div id="boss3dOverlay">
+  <iframe id="boss3dFrame" allow="autoplay; fullscreen"></iframe>
+  <button id="boss3dExit">ВЫЙТИ</button>
+</div>
+<script src="game.js"></script>
+<script src="sprites.js"></script>
+<script src="view.js"></script>
+</body>
+</html>
