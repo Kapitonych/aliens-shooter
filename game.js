@@ -508,6 +508,7 @@ const Game = {
 
   /* --- lifecycle --- */
   newRun(clsId, daily) {
+    Input.reset();                  // новый забег всегда с чистым вводом
     if (daily) {
       this.daily = true;
       this.dailyKey = daily.key;
@@ -571,6 +572,7 @@ const Game = {
   },
 
   restore(data) {
+    Input.reset();                  // продолжение с залипшим стиком = стоящий герой
     this.daily = false;
     setSeed(null);
     this.player = newPlayer();
