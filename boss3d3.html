@@ -69,7 +69,7 @@ window.addEventListener('unhandledrejection', function (e) {
   <div class="cos" id="fps">—</div>
   <button id="pause3d">II</button>
   <div class="wbar" id="wbar"></div>
-  <div class="hint">веди пальцем — идёшь · камера и огонь сами</div>
+  <div class="hint">палец — идёшь · второй палец — камера · огонь сам</div>
 </div>
 <script>
 "use strict";
@@ -530,18 +530,31 @@ buildTexSet(0);
 /* ---------- управление ---------- */
 /* Одно касание на весь экран — идём. Камера сама доворачивается на цель,
    стрельба автоматическая: как в 2D, где игрок только ходит. */
-const touch = { move: null };
+const touch = { move: null, look: null };
 cv.addEventListener('pointerdown', e => {
-  if (!touch.move) touch.move = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+  if (!touch.move) {
+    touch.move = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+  } else if (!touch.look && e.pointerId !== touch.move.id) {
+    touch.look = { id: e.pointerId, x: e.clientX };
+    P.manual = 1.6;                 // держим камеру, пока палец на экране
+  }
 });
 cv.addEventListener('pointermove', e => {
   if (touch.move && e.pointerId === touch.move.id) {
     touch.move.dx = e.clientX - touch.move.x;
     touch.move.dy = e.clientY - touch.move.y;
+  } else if (touch.look && e.pointerId === touch.look.id) {
+    P.a += (e.clientX - touch.look.x) * 0.006;
+    touch.look.x = e.clientX;
+    P.manual = 1.6;
   }
 });
 const endT = e => {
   if (touch.move && e.pointerId === touch.move.id) touch.move = null;
+  if (touch.look && e.pointerId === touch.look.id) {
+    touch.look = null;
+    P.manual = Math.max(P.manual || 0, 0.9);   // после отпускания даём 0.9 с свободного обзора
+  }
 };
 cv.addEventListener('pointerup', endT);
 cv.addEventListener('pointercancel', endT);
@@ -616,7 +629,8 @@ function step(dt) {
     const d = Math.hypot(c.x - P.x, c.y - P.y);
     if (d < aimD && hasLOS(P.x, P.y, c.x, c.y)) { aimD = d; aim = c; }
   }
-  if (aim) {
+  P.manual = Math.max(0, (P.manual || 0) - dt);
+  if (aim && P.manual <= 0) {
     const want = Math.atan2(aim.y - P.y, aim.x - P.x);
     let diff = want - P.a;
     while (diff > Math.PI) diff -= TAU;
@@ -626,6 +640,13 @@ function step(dt) {
     P.a += turn;
     // огонь сам, когда цель в конусе и в зоне поражения
     if (Math.abs(diff) < 0.30 && aimD < 13 && P.cd <= 0) { fire(); P.cd = 0.24; }
+  } else if (aim && aimD < 13 && P.cd <= 0) {
+    // ручной обзор: стреляем, если цель сама попала в прицел
+    const want2 = Math.atan2(aim.y - P.y, aim.x - P.x);
+    let d2 = want2 - P.a;
+    while (d2 > Math.PI) d2 -= TAU;
+    while (d2 < -Math.PI) d2 += TAU;
+    if (Math.abs(d2) < 0.22) { fire(); P.cd = 0.24; }
   }
 
   if (B.alive) {

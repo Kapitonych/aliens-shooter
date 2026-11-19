@@ -472,10 +472,10 @@ const CLASSES = [
 
 /* ---------------- постоянные улучшения ---------------- */
 const UPGRADES = [
-  { id: 'dmg',   ic: '⚡', nm: 'Усилитель оружия', ds: '+6% урона навсегда',       max: 5, cost: l => 150 * (l + 1) },
-  { id: 'hp',    ic: '❤', nm: 'Броня',             ds: '+20 макс. HP навсегда',     max: 5, cost: l => 120 * (l + 1) },
-  { id: 'speed', ic: '➤', nm: 'Маневровые',        ds: '+5% скорость бега навсегда', max: 5, cost: l => 100 * (l + 1) },
-  { id: 'luck',  ic: '✦', nm: 'Удача',             ds: '+40 стартовых ⛁, лучше дроп', max: 3, cost: l => 200 * (l + 1) }
+  { id: 'dmg',   ic: '⚡', nm: 'Усилитель оружия', ds: '+6% урона навсегда',       max: 5, cost: l => 300 * (l + 1) },
+  { id: 'hp',    ic: '❤', nm: 'Броня',             ds: '+20 макс. HP навсегда',     max: 5, cost: l => 240 * (l + 1) },
+  { id: 'speed', ic: '➤', nm: 'Маневровые',        ds: '+5% скорость бега навсегда', max: 5, cost: l => 200 * (l + 1) },
+  { id: 'luck',  ic: '✦', nm: 'Удача',             ds: '+40 стартовых ⛁, лучше дроп', max: 3, cost: l => 380 * (l + 1) }
 ];
 
 /* ---------------- perks ---------------- */
@@ -1437,7 +1437,7 @@ const Game = {
     const meta = getMeta();
     const lvl = meta.drone || 0;
     if (lvl >= 5) return;
-    const price = 180 * Math.max(1, lvl);
+    const price = 450 * Math.max(1, lvl);
     if (meta.coins < price) return;
     meta.coins -= price;
     meta.drone = lvl + 1;
@@ -2086,13 +2086,13 @@ const Game = {
 
 /* ---------------- магазин между секторами ---------------- */
 const SHOP_POOL = [
-  { id: 'dmg',   nm: '+15% урона',         ds: 'Плазменный усилитель', price: 45,  apply: p => { p.dmgMult *= 1.15; } },
-  { id: 'rate',  nm: '+12% скор. атаки',   ds: 'Ускоритель',           price: 45,  apply: p => { p.atkRate *= 1.12; } },
-  { id: 'hp',    nm: '+30 макс. HP',       ds: 'Биоконтур',            price: 35,  apply: p => { p.maxHp += 30; p.hp += 30; } },
-  { id: 'heal',  nm: 'Лечение 45 HP',      ds: 'Ремкомплект',          price: 25,  apply: p => { p.hp = Math.min(p.maxHp, p.hp + 45); } },
-  { id: 'multi', nm: '+1 снаряд',          ds: 'Раскол луча',          price: 130, apply: p => { p.projCount += 1; } },
-  { id: 'pierce',nm: '+1 пробитие',        ds: 'Бронебой',             price: 75,  apply: p => { p.pierce += 1; } },
-  { id: 'crit',  nm: '+8% крит',           ds: 'Слабые точки',         price: 65,  apply: p => { p.critChance = Math.min(0.85, p.critChance + 0.08); } },
+  { id: 'dmg',   nm: '+15% урона',         ds: 'Плазменный усилитель', price: 75,  apply: p => { p.dmgMult *= 1.15; } },
+  { id: 'rate',  nm: '+12% скор. атаки',   ds: 'Ускоритель',           price: 75,  apply: p => { p.atkRate *= 1.12; } },
+  { id: 'hp',    nm: '+30 макс. HP',       ds: 'Биоконтур',            price: 55,  apply: p => { p.maxHp += 30; p.hp += 30; } },
+  { id: 'heal',  nm: 'Лечение 45 HP',      ds: 'Ремкомплект',          price: 40,  apply: p => { p.hp = Math.min(p.maxHp, p.hp + 45); } },
+  { id: 'multi', nm: '+1 снаряд',          ds: 'Раскол луча',          price: 210, apply: p => { p.projCount += 1; } },
+  { id: 'pierce',nm: '+1 пробитие',        ds: 'Бронебой',             price: 130, apply: p => { p.pierce += 1; } },
+  { id: 'crit',  nm: '+8% крит',           ds: 'Слабые точки',         price: 110,  apply: p => { p.critChance = Math.min(0.85, p.critChance + 0.08); } },
   { id: 'speed', nm: '+8% скорость бега',  ds: 'Маневровые',           price: 50,  apply: p => { p.speed *= 1.08; } },
   { id: 'size',  nm: '+20% размер заряда', ds: 'Тяжёлый заряд',        price: 55,  apply: p => { p.projSize *= 1.2; } },
   { id: 'ammo',  nm: 'Боезапас +10',       ds: 'К текущему оружию',    price: 40,  apply: p => { if (isFinite(p.ammo[p.weapon])) p.ammo[p.weapon] += 10; } }
@@ -2124,8 +2124,8 @@ Game.buyShopItem = function (idx) {
 };
 
 Game.rerollShop = function () {
-  if (this.coins < 15) return;
-  this.coins -= 15;
+  if (this.coins < 25) return;
+  this.coins -= 25;
   const pool = SHOP_POOL.slice();
   this.shopOffers = [];
   for (let i = 0; i < 3 && pool.length; i++) {
