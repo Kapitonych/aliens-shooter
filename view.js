@@ -80,7 +80,10 @@ const UI = {
     this.el.tgSound.onclick = () => { Settings.sound = !Settings.sound; Sfx.on = Settings.sound; saveSettings(); Sfx.init(); this.syncSettings(); };
     this.el.tgRun.onclick = () => { Settings.runGun = !Settings.runGun; saveSettings(); this.syncSettings(); };
     this.el.tgShake.onclick = () => { Settings.shake = !Settings.shake; saveSettings(); this.syncSettings(); };
-    this.el.tgVibe.onclick = () => { Settings.vibe = !Settings.vibe; saveSettings(); this.syncSettings(); vibrate(30); };
+    this.el.tgVibe.onclick = () => {
+      Settings.vibe = !Settings.vibe; saveSettings(); this.syncSettings(); vibrate(40, 'medium');
+      this.toast(Settings.vibe ? 'ВИБРО · ' + vibroDiag() : 'ВИБРО ВЫКЛ');
+    };
     this.el.tgQuality.onclick = () => { Settings.quality = Settings.quality ? 0 : 1; saveSettings(); this.syncSettings(); applyQuality(); };
     this.el.tgBoss3D.onclick = () => {
       Settings.boss3d = Settings.boss3d ? 0 : 1;
@@ -495,7 +498,20 @@ const UI = {
     const el = this.el;
     if (!el.boss3dOverlay) return;
     el.boss3dOverlay.classList.remove('on');
+    el.boss3dOverlay.style.width = '';
+    el.boss3dOverlay.style.height = '';
+    el.boss3dFrame.style.width = '';
+    el.boss3dFrame.style.height = '';
     el.boss3dFrame.src = 'about:blank';
+    // фокус остаётся в скрытом iframe — WebView шлёт касания туда, и герой «стоит»
+    try { el.boss3dFrame.blur(); } catch (e) {}
+    if (document.activeElement && document.activeElement.tagName === 'IFRAME') {
+      document.activeElement.blur();
+    }
+    const cv = document.getElementById('game');
+    if (cv && cv.focus) { try { cv.focus({ preventScroll: true }); } catch (e) { cv.focus(); } }
+    window.focus();
+    Input.reset();
     this.showHud(true);
   },
 
@@ -538,17 +554,36 @@ function tgHaptics() {
   const tg = window.Telegram && window.Telegram.WebApp;
   return (tg && tg.HapticFeedback) ? tg.HapticFeedback : null;
 }
+/* вибро в Telegram требует, чтобы версия Bot API была 6.1+, а Mini App был
+   открыт как web_app. Если HapticFeedback молча не срабатывает — пробуем все пути. */
 function vibrate(pattern, style) {
   if (!Settings.vibe) return;
   const h = tgHaptics();
   if (h) {
     try {
-      if (style === 'error') { h.notificationOccurred('error'); return; }
-      h.impactOccurred(style || 'light');
-      return;
+      const map = { light: 'light', medium: 'medium', heavy: 'heavy', error: 'rigid', soft: 'soft' };
+      if (style === 'error' && h.notificationOccurred) { h.notificationOccurred('error'); }
+      else if (h.impactOccurred) { h.impactOccurred(map[style] || 'light'); }
+      else if (h.notificationOccurred) { h.notificationOccurred('success'); }
     } catch (e) {}
   }
+  // на Android navigator.vibrate часто живой, на iOS — нет; это не мешает
   if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch (e) {} }
+  if (window.TelegramWebviewProxy) {
+    try {
+      window.TelegramWebviewProxy.postEvent('web_app_trigger_haptic_feedback',
+        JSON.stringify({ type: 'impact', impact_style: style || 'light' }));
+    } catch (e) {}
+  }
+}
+
+/* диагностика: пункт «Вибрация» показывает, видит ли игра Telegram-объект */
+function vibroDiag() {
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if (!tg) return 'нет Telegram.WebApp (открыто в браузере)';
+  if (!tg.HapticFeedback) return 'WebApp есть, HapticFeedback нет (старый клиент)';
+  const v = (tg.version || '?');
+  return 'HapticFeedback есть · версия клиента ' + v;
 }
 
 window.__haptics = {
@@ -1930,16 +1965,18 @@ function ptr(e) {
 }
 
 canvas.addEventListener('pointerdown', e => {
+  Input.lastTouch = performance.now();
   if (Game.state !== 'playing') return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   const p = ptr(e);
   const j = Input.joy;
   j.active = true; j.id = e.pointerId; j.ox = p.x; j.oy = p.y; j.dx = 0; j.dy = 0; j.mag = 0;
-  canvas.setPointerCapture(e.pointerId);
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) {}   // в WebView бывает нет активного указателя
   e.preventDefault();
 });
 
 canvas.addEventListener('pointermove', e => {
+  Input.lastTouch = performance.now();
   const j = Input.joy;
   if (!j.active || e.pointerId !== j.id) return;
   const p = ptr(e);
@@ -1954,8 +1991,12 @@ canvas.addEventListener('pointermove', e => {
 
 function endPtr(e) {
   const j = Input.joy;
-  if (e.pointerId === j.id) { j.active = false; j.id = null; j.mag = 0; j.dx = 0; j.dy = 0; }
+  if (j.id === null || e.pointerId === j.id) {
+    j.active = false; j.id = null; j.mag = 0; j.dx = 0; j.dy = 0;
+  }
 }
+window.addEventListener('pointerup', endPtr);
+window.addEventListener('pointercancel', endPtr);
 canvas.addEventListener('pointerup', endPtr);
 canvas.addEventListener('pointercancel', endPtr);
 
@@ -1992,7 +2033,12 @@ window.addEventListener('keydown', e => {
   }
 });
 window.addEventListener('keyup', e => { Input.keys[e.key.toLowerCase()] = false; });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { Input.reset(); if (Game.state === 'playing') Game.pause(); } });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { Input.reset(); if (Game.state === 'playing') Game.pause(); }
+  else Input.reset();              // вернулись в WebView — старый палец уже не наш
+});
+window.addEventListener('blur', () => Input.reset());
+window.addEventListener('pageshow', () => Input.reset());
 
 // Любой драг вне прокручиваемых экранов не должен тянуть страницу/окно.
 document.addEventListener('touchmove', e => {
@@ -2035,6 +2081,7 @@ function loop(now) {
   const dt = Math.min(0.045, Math.max(0, (now - lastT) / 1000));
   lastT = now;
   Game.time += (Game.state === 'playing' ? 0 : dt);
+  Input.touchTick();
   Game.update(dt);
   Game.draw();
   UI.updateHud(false);

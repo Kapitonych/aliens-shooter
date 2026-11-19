@@ -362,7 +362,16 @@ const Input = {
     if (j.active && j.mag > 0.14) return { x: j.dx, y: j.dy, mag: clamp(j.mag, 0, 1) };
     return { x: 0, y: 0, mag: 0 };
   },
-  reset() { this.keys = Object.create(null); this.joy.active = false; this.joy.id = null; this.joy.mag = 0; }
+  reset() { this.keys = Object.create(null); this.joy.active = false; this.joy.id = null; this.joy.mag = 0; },
+  /* страховка: если палец не отпустил стик (iframe, сворачивание WebView,
+     переключение приложения) — сбрасываем после долгой паузы без событий */
+  lastTouch: 0,
+  touchTick() {
+    const j = this.joy;
+    if (j.active && this.lastTouch && performance.now() - this.lastTouch > 4000) {
+      j.active = false; j.id = null; j.mag = 0; j.dx = 0; j.dy = 0;
+    }
+  }
 };
 
 /* ---------------- entities ---------------- */
@@ -1353,6 +1362,7 @@ const Game = {
 
   finishBoss3D(win, data) {
     UI.closeBoss3D();
+    Input.reset();                  // после iframe события пальца терялись
     const r = this.room;
     const p = this.player;
     if (data && typeof data.hp === 'number' && p) {
@@ -1387,6 +1397,7 @@ const Game = {
 
   quitBoss3D() {
     UI.closeBoss3D();
+    Input.reset();                  // иначе стик остаётся зажатым после iframe
     this.state = 'playing';
     UI.showHud(true);
     this.spawnWave();
