@@ -249,214 +249,267 @@ function drawMarineGun(g, ph) {
    Злее: огромный вытянутый череп с пастью, острые когти, шипы,
    рёбра панциря, светящаяся слюна. Фаза анимирует лапы.
 */
-function drawAlien(g, o, ph) {
-  const bw = o.bw, bh = o.bh, headL = o.headL, headW = o.headW;
-  const accent = o.accent || '#8dff72';
-  const dark = o.dark || '#070d0c';
-  const chitin = o.bodyHi || '#2c4150';
-  const limb = o.limb || '#101a1f';
-  const sw = Math.sin((ph || 0) * TAU);
-  const lw = o.limbW || 5.5;
-
-  g.lineCap = 'round';
-  g.lineJoin = 'round';
-
-  /* ---------- хвост: сегментированный, с клинком ---------- */
-  const segs = 7;
-  for (let s = segs; s >= 0; s--) {
-    const t = s / segs;
-    const x = Math.sin(t * 2.2 + sw * 0.12) * bw * 0.55 + bw * (0.25 + t * 0.55);
-    const y = bh * (0.55 + t * 1.05);
-    const w = (o.tail || 6) * (1 - t * 0.72);
-    g.strokeStyle = t > 0.75 ? '#141f27' : '#16222b';
-    g.lineWidth = Math.max(1.2, w);
-    g.beginPath();
-    g.moveTo(x, y);
-    g.lineTo(x + Math.sin(t * 3.1) * 4, y + bh * 0.16);
-    g.stroke();
+/* Ксеноморф, вид 3/4 сверху: вытянутый череп, биомеханические рёбра,
+   сегментированный хвост с клинком. Свет сверху-слева, холодный контровой. */
+/* --- органика: полигон по осевой линии с переменной толщиной --- */
+function chain(g, pts, widths, fill, rim) {
+  const L = [], R = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const q = pts[Math.min(pts.length - 1, i + 1)];
+    const r = pts[Math.max(0, i - 1)];
+    let dx = q[0] - r[0], dy = q[1] - r[1];
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    const nx = -dy, ny = dx;
+    const w = widths[i] * 0.5;
+    L.push([p[0] + nx * w, p[1] + ny * w]);
+    R.push([p[0] - nx * w, p[1] - ny * w]);
   }
-  // клинок на конце
-  g.fillStyle = '#0d151a';
   g.beginPath();
-  g.moveTo(bw * 0.92, bh * 1.56);
-  g.lineTo(bw * 1.22, bh * 1.78);
-  g.lineTo(bw * 1.02, bh * 1.86);
+  g.moveTo(L[0][0], L[0][1]);
+  for (let i = 1; i < L.length; i++) {
+    const mx = (L[i - 1][0] + L[i][0]) / 2, my = (L[i - 1][1] + L[i][1]) / 2;
+    g.quadraticCurveTo(L[i - 1][0], L[i - 1][1], mx, my);
+  }
+  const lastL = L[L.length - 1];
+  g.lineTo(lastL[0], lastL[1]);
+  // закруглённый кончик
+  const pEnd = pts[pts.length - 1], pPrev = pts[pts.length - 2];
+  const ang = Math.atan2(pEnd[1] - pPrev[1], pEnd[0] - pPrev[0]);
+  const wEnd = widths[widths.length - 1] * 0.5;
+  g.quadraticCurveTo(pEnd[0] + Math.cos(ang) * wEnd, pEnd[1] + Math.sin(ang) * wEnd,
+                     R[R.length - 1][0], R[R.length - 1][1]);
+  for (let i = R.length - 2; i >= 0; i--) {
+    const mx = (R[i + 1][0] + R[i][0]) / 2, my = (R[i + 1][1] + R[i][1]) / 2;
+    g.quadraticCurveTo(R[i + 1][0], R[i + 1][1], mx, my);
+  }
+  g.lineTo(R[0][0], R[0][1]);
   g.closePath();
-  g.fill();
-  g.strokeStyle = accent; g.globalAlpha = 0.5; g.lineWidth = 1.2; g.stroke(); g.globalAlpha = 1;
-
-  /* ---------- ноги: дигитиграйд ---------- */
-  for (const s of [-1, 1]) {
-    const swing = sw * s * 3.4;
-    g.fillStyle = '#101a21';
-    g.beginPath(); g.arc(s * bw * 0.42, bh * 0.30, lw * 0.95, 0, TAU); g.fill();
-    g.strokeStyle = limb;
-    g.lineWidth = lw;
-    g.beginPath();
-    g.moveTo(s * bw * 0.42, bh * 0.30);
-    g.lineTo(s * bw * 0.88, bh * 0.56 + swing);
-    g.lineTo(s * bw * 0.62, bh * 0.86 + swing);
-    g.lineTo(s * bw * 0.70, bh * 1.02 + swing);
-    g.stroke();
-    // когти
-    g.strokeStyle = '#8fa2ac'; g.globalAlpha = 0.36; g.lineWidth = 1.1;
-    for (let k = -1; k <= 1; k++) {
-      g.beginPath();
-      g.moveTo(s * bw * 0.70, bh * 1.00 + swing);
-      g.lineTo(s * bw * (0.62 + k * 0.12), bh * 1.20 + swing);
-      g.stroke();
-    }
-    g.globalAlpha = 1;
-  }
-
-  /* ---------- торс: узкая талия, широкие плечи ---------- */
-  const bg = g.createLinearGradient(-bw * 0.6, -bh * 0.5, bw * 0.5, bh * 0.5);
-  bg.addColorStop(0, chitin);
-  bg.addColorStop(0.45, '#152129');
-  bg.addColorStop(1, '#060b0e');
-  g.fillStyle = bg;
-  g.beginPath();
-  g.moveTo(0, -bh * 0.62);
-  g.bezierCurveTo(bw * 0.72, -bh * 0.5, bw * 0.62, -bh * 0.05, bw * 0.42, bh * 0.34);
-  g.bezierCurveTo(bw * 0.30, bh * 0.60, -bw * 0.30, bh * 0.60, -bw * 0.42, bh * 0.34);
-  g.bezierCurveTo(-bw * 0.62, -bh * 0.05, -bw * 0.72, -bh * 0.5, 0, -bh * 0.62);
-  g.closePath();
-  g.fill();
-  g.strokeStyle = 'rgba(130,185,215,0.18)';
-  g.lineWidth = 1.6;
-  g.stroke();
-
-  /* рёбра-шевроны */
-  g.strokeStyle = 'rgba(150,200,215,0.12)';
-  g.lineWidth = 2;
-  for (let i = 0; i < 4; i++) {
-    const y = -bh * 0.30 + i * bh * 0.19;
-    const w = bw * (0.52 - i * 0.07);
-    g.beginPath();
-    g.moveTo(-w, y);
-    g.quadraticCurveTo(0, y + bh * 0.11, w, y);
-    g.stroke();
-  }
-
-  /* блик по панцирю */
-  g.strokeStyle = 'rgba(190,235,255,0.30)';
-  g.lineWidth = 2.4;
-  g.beginPath();
-  g.moveTo(-bw * 0.16, -bh * 0.55);
-  g.quadraticCurveTo(-bw * 0.55, -bh * 0.22, -bw * 0.34, bh * 0.26);
-  g.stroke();
-
-  /* дорсальные трубки за спиной */
-  if (o.spike) {
-    for (let i = 0; i < o.spike; i++) {
-      const px = (i - (o.spike - 1) / 2) * bw * 0.34;
-      const py = -bh * 0.52;
-      const len = headL * (0.34 + (i % 2) * 0.12);
-      g.strokeStyle = '#0a1116';
-      g.lineWidth = 6.5;
-      g.beginPath();
-      g.moveTo(px, py);
-      g.quadraticCurveTo(px * 1.35, py - len * 0.75, px * 1.15, py - len);
-      g.stroke();
-      g.strokeStyle = 'rgba(160,210,225,0.28)';
-      g.lineWidth = 2;
-      g.beginPath();
-      g.moveTo(px, py);
-      g.quadraticCurveTo(px * 1.35, py - len * 0.75, px * 1.15, py - len);
-      g.stroke();
-    }
-  }
-
-  /* ---------- руки: длинные, с когтями ---------- */
-  for (const s of [-1, 1]) {
-    const swing = -sw * s * 2.4;
-    g.strokeStyle = limb;
-    g.lineWidth = lw * 0.85;
-    g.beginPath();
-    g.moveTo(s * bw * 0.52, -bh * 0.42);
-    g.lineTo(s * bw * 1.02, -bh * 0.34 + swing);
-    g.lineTo(s * bw * 1.22, bh * 0.06 + swing);
-    g.stroke();
-    g.strokeStyle = '#8fa2ac'; g.globalAlpha = 0.34; g.lineWidth = 1.1;
-    for (let k = -1; k <= 1; k++) {
-      g.beginPath();
-      g.moveTo(s * bw * 1.22, bh * 0.05 + swing);
-      g.lineTo(s * bw * (1.34 + k * 0.06), bh * (0.20 + k * 0.05) + swing);
-      g.stroke();
-    }
-    g.globalAlpha = 1;
-  }
-
-  /* ---------- шея ---------- */
-  g.strokeStyle = '#0b1318';
-  g.lineWidth = lw * 1.5;
-  g.beginPath();
-  g.moveTo(0, -bh * 0.58);
-  g.lineTo(0, -bh * 0.82);
-  g.stroke();
-
-  /* ---------- череп: вытянутый купол без глаз ---------- */
-  const hy = -bh * 0.78;
-  const hg = g.createLinearGradient(-headW * 0.6, hy - headL * 0.4, headW * 0.7, hy + headL * 0.2);
-  hg.addColorStop(0, '#2a3d49');
-  hg.addColorStop(0.45, '#0b141a');
-  hg.addColorStop(1, '#020609');
-  g.fillStyle = hg;
-  g.beginPath();
-  g.moveTo(0, hy - headL);
-  g.bezierCurveTo(headW * 1.05, hy - headL * 0.55, headW * 0.86, hy + headL * 0.12, headW * 0.34, hy + headL * 0.30);
-  g.lineTo(headW * 0.30, hy + headL * 0.46);
-  g.lineTo(0, hy + headL * 0.34);
-  g.lineTo(-headW * 0.30, hy + headL * 0.46);
-  g.lineTo(-headW * 0.34, hy + headL * 0.30);
-  g.bezierCurveTo(-headW * 0.86, hy + headL * 0.12, -headW * 1.05, hy - headL * 0.55, 0, hy - headL);
-  g.closePath();
-  g.fill();
-  g.strokeStyle = 'rgba(140,195,225,0.20)';
-  g.lineWidth = 1.6;
-  g.stroke();
-
-  /* глянцевый блик по куполу */
-  const sheen = g.createLinearGradient(-headW * 0.5, hy - headL * 0.9, -headW * 0.1, hy - headL * 0.2);
-  sheen.addColorStop(0, 'rgba(190,230,250,0.16)');
-  sheen.addColorStop(1, 'rgba(190,230,250,0)');
-  g.fillStyle = sheen;
-  g.beginPath();
-  g.moveTo(-headW * 0.12, hy - headL * 0.96);
-  g.bezierCurveTo(-headW * 0.72, hy - headL * 0.62, -headW * 0.62, hy - headL * 0.1, -headW * 0.26, hy + headL * 0.2);
-  g.bezierCurveTo(-headW * 0.44, hy - headL * 0.15, -headW * 0.42, hy - headL * 0.55, -headW * 0.06, hy - headL * 0.9);
-  g.closePath();
-  g.fill();
-
-  /* пасть с внутренними зубами */
-  g.fillStyle = '#04090b';
-  g.beginPath();
-  g.ellipse(0, hy + headL * 0.34, headW * 0.30, headL * 0.15, 0, 0, TAU);
-  g.fill();
-  g.fillStyle = '#dfe9ee';
-  for (let k = -2; k <= 2; k++) {
-    g.beginPath();
-    g.moveTo(k * headW * 0.10, hy + headL * 0.30);
-    g.lineTo(k * headW * 0.10 + 1.6, hy + headL * 0.38);
-    g.lineTo(k * headW * 0.10 - 1.6, hy + headL * 0.38);
-    g.closePath();
-    g.fill();
-  }
-
-  /* гребень по куполу */
-  g.strokeStyle = 'rgba(120,175,205,0.22)';
-  g.lineWidth = 1.6;
-  for (let i = 0; i < 5; i++) {
-    const t = 0.16 + i * 0.16;
-    const yy = hy - headL * (0.92 - t * 0.9);
-    const hw = headW * (0.24 + t * 0.30);
-    g.beginPath();
-    g.moveTo(-hw * 0.55, yy);
-    g.quadraticCurveTo(0, yy - headL * 0.05, hw * 0.55, yy);
-    g.stroke();
+  g.fillStyle = fill; g.fill();
+  if (rim) {
+    g.strokeStyle = rim; g.lineWidth = 1.1; g.stroke();
   }
 }
 
+/* Ксеноморф, вид 3/4 сверху. Анатомия: длинный череп вперёд, узкая талия,
+   четыре конечности, хвост с клинком. Свет сверху-слева, холодный контровой. */
+function drawAlien(g, o, ph) {
+  const bw = o.bw || 30, bh = o.bh || 40;
+  const accent = o.accent || '#8dff72';
+  const hi = o.bodyHi || '#4a6a80';
+  const mid = o.bodyMid || '#243642';
+  const low = o.bodyLow || '#0a1116';
+  const sw = Math.sin((ph || 0) * TAU);
+
+  g.save();
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+
+  /* контактная тень */
+  const sh = g.createRadialGradient(bw * 0.1, bh * 0.5, 2, bw * 0.1, bh * 0.5, bw * 1.25);
+  sh.addColorStop(0, 'rgba(0,0,0,0.55)');
+  sh.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = sh;
+  g.beginPath(); g.ellipse(bw * 0.1, bh * 0.5, bw * 1.25, bh * 0.45, 0, 0, TAU); g.fill();
+
+  /* ---------- хвост: длинная дуга вправо-вверх, сужается к клинку ---------- */
+  const tPts = [], tW = [];
+  for (let i = 0; i <= 6; i++) {
+    const t = i / 6;
+    const x = bw * (0.15 + t * 1.05) + Math.sin(t * 2.4 + sw * 0.15) * bw * 0.25;
+    const y = bh * (0.55 - t * 0.62);
+    tPts.push([x, y]); tW.push((o.tail || 13) * (1 - t * 0.62));
+  }
+  chain(g, tPts, tW, low, 'rgba(120,175,205,0.18)');
+  // клинок: широкий, с блеском по кромке
+  const e = tPts[tPts.length - 1], pv = tPts[tPts.length - 2];
+  const a2 = Math.atan2(e[1] - pv[1], e[0] - pv[0]);
+  g.save();
+  g.translate(e[0], e[1]); g.rotate(a2);
+  const bl = g.createLinearGradient(0, 0, bw * 0.75, 0);
+  bl.addColorStop(0, '#31434f'); bl.addColorStop(1, '#0a0f13');
+  g.fillStyle = bl;
+  g.beginPath();
+  g.moveTo(-2, -tW[tW.length - 1] * 0.5);
+  g.quadraticCurveTo(bw * 0.45, -tW[tW.length - 1] * 0.9, bw * 0.72, 6);
+  g.quadraticCurveTo(bw * 0.34, tW[tW.length - 1] * 0.9, -2, tW[tW.length - 1] * 0.5);
+  g.closePath(); g.fill();
+  g.strokeStyle = accent; g.globalAlpha = 0.5; g.lineWidth = 1; g.stroke(); g.globalAlpha = 1;
+  g.restore();
+
+  /* ---------- задние лапы: бедро-колено-стопа, три сегмента ---------- */
+  for (const side of [-1, 1]) {
+    const hip = [side * bw * 0.26, bh * 0.30];
+    const knee = [side * bw * 0.58, bh * 0.48 + sw * side * 2];
+    const foot = [side * bw * 0.42, bh * 0.86 + sw * side * 3];
+    chain(g, [hip, knee, foot], [bw * 0.58, bw * 0.38, bw * 0.22], mid, 'rgba(150,200,230,0.22)');
+    // когти
+    g.strokeStyle = 'rgba(180,210,230,0.55)'; g.lineWidth = 1.3;
+    for (let k = -1; k <= 1; k++) {
+      g.beginPath(); g.moveTo(foot[0] + k * 2.5, foot[1]);
+      g.lineTo(foot[0] + k * 4.5 + side * 2, foot[1] + 8); g.stroke();
+    }
+  }
+
+  /* ---------- туловище: узкая талия, рёбра, плечевые пластины ---------- */
+  const spine = [
+    [0, bh * 0.40], [0, bh * 0.20], [side0(0), -bh * 0.02],
+    [0, -bh * 0.24], [0, -bh * 0.40]
+  ];
+  const wSpine = [bw * 0.44, bw * 0.50, bw * 0.60, bw * 0.58, bw * 0.40];
+  const bodyGrad = g.createLinearGradient(-bw * 0.5, -bh * 0.3, bw * 0.45, bh * 0.4);
+  bodyGrad.addColorStop(0, hi);
+  bodyGrad.addColorStop(0.45, mid);
+  bodyGrad.addColorStop(1, low);
+  chain(g, spine, wSpine, bodyGrad, 'rgba(160,210,240,0.22)');
+
+  /* рёбра */
+  for (let i = 0; i < 4; i++) {
+    const t = i / 3;
+    const yy = -bh * 0.24 + t * bh * 0.50;
+    const rw = bw * (0.10 + t * 0.42);
+    g.strokeStyle = 'rgba(3,7,10,0.8)'; g.lineWidth = 2.2;
+    g.beginPath(); g.moveTo(-rw, yy + 2.5); g.quadraticCurveTo(0, yy + 8, rw, yy + 2.5); g.stroke();
+    g.strokeStyle = 'rgba(160,215,245,' + (0.34 - t * 0.14).toFixed(2) + ')'; g.lineWidth = 1.7;
+    g.beginPath(); g.moveTo(-rw, yy); g.quadraticCurveTo(0, yy + 5.5, rw, yy); g.stroke();
+  }
+  /* позвоночный гребень */
+  g.strokeStyle = 'rgba(185,230,255,0.28)'; g.lineWidth = 1.4;
+  g.beginPath(); g.moveTo(0, -bh * 0.34); g.lineTo(0, bh * 0.30); g.stroke();
+
+  /* ---------- плечевые пластины ---------- */
+  for (const side of [-1, 1]) {
+    const sg = g.createLinearGradient(side * bw * 0.2, -bh * 0.42, side * bw * 0.6, -bh * 0.12);
+    sg.addColorStop(0, hi); sg.addColorStop(1, low);
+    g.fillStyle = sg;
+    g.beginPath();
+    g.moveTo(side * bw * 0.14, -bh * 0.40);
+    g.quadraticCurveTo(side * bw * 0.56, -bh * 0.40, side * bw * 0.66, -bh * 0.16);
+    g.quadraticCurveTo(side * bw * 0.44, -bh * 0.10, side * bw * 0.16, -bh * 0.22);
+    g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(180,225,250,0.26)'; g.lineWidth = 1.1; g.stroke();
+  }
+
+  /* ---------- передние лапы: длинные, с локтем ---------- */
+  for (const side of [-1, 1]) {
+    const sh = [side * bw * 0.40, -bh * 0.26];
+    const elb = [side * bw * 0.92, bh * 0.02 + sw * side * 2];
+    const claw = [side * bw * 0.52, bh * 0.40 + sw * side * 3];
+    chain(g, [sh, elb, claw], [bw * 0.34, bw * 0.24, bw * 0.14], mid, 'rgba(155,205,235,0.26)');
+    g.strokeStyle = 'rgba(190,220,240,0.5)'; g.lineWidth = 1.2;
+    for (let k = -1; k <= 1; k++) {
+      g.beginPath(); g.moveTo(claw[0] + k * 2, claw[1]);
+      g.lineTo(claw[0] + k * 3.5 + side * 2, claw[1] + 7.5); g.stroke();
+    }
+  }
+
+  /* ---------- шея ---------- */
+  const neckGrad = g.createLinearGradient(-bw * 0.2, -bh * 0.6, bw * 0.2, -bh * 0.3);
+  neckGrad.addColorStop(0, hi); neckGrad.addColorStop(1, low);
+  chain(g, [[0, -bh * 0.26], [0, -bh * 0.32]], [bw * 0.34, bw * 0.26], neckGrad, 'rgba(170,215,245,0.22)');
+
+  /* горб за головой: силуэт перестаёт быть симметричным овалом */
+  const hump = g.createLinearGradient(-bw * 0.3, -bh * 0.6, bw * 0.3, -bh * 0.2);
+  hump.addColorStop(0, hi); hump.addColorStop(1, low);
+  g.fillStyle = hump;
+  g.beginPath();
+  g.moveTo(-bw * 0.34, -bh * 0.30);
+  g.quadraticCurveTo(0, -bh * 0.66, bw * 0.34, -bh * 0.30);
+  g.quadraticCurveTo(0, -bh * 0.18, -bw * 0.34, -bh * 0.30);
+  g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(185,228,250,0.25)'; g.lineWidth = 1; g.stroke();
+
+  /* ---------- череп: длинный, наклонён вперёд ---------- */
+  const tilt = -0.20;                       // наклон к цели
+  const hx = 8, hy = -bh * 0.34;            // основание черепа
+  g.save();
+  g.translate(hx, hy);
+  g.rotate(tilt);
+
+  const HW = o.headW || 30, HL = o.headL || 64;
+  const hg = g.createLinearGradient(-HW * 0.7, 0, HW * 0.5, -HL);
+  hg.addColorStop(0, o.headHi || '#6f90a8');
+  hg.addColorStop(0.4, o.headMid || '#31485a');
+  hg.addColorStop(1, o.headLow || '#0a1015');
+
+  // купол: от широкой затылочной части к узкому рылу
+  g.beginPath();
+  g.moveTo(0, -HL);
+  g.bezierCurveTo(HW * 0.72, -HL * 0.78, HW * 0.66, -HL * 0.28, HW * 0.26, -HL * 0.06);
+  g.quadraticCurveTo(0, 0, -HW * 0.26, -HL * 0.06);
+  g.bezierCurveTo(-HW * 0.66, -HL * 0.28, -HW * 0.72, -HL * 0.78, 0, -HL);
+  g.closePath();
+  g.fillStyle = hg; g.fill();
+  g.strokeStyle = 'rgba(180,225,250,0.30)'; g.lineWidth = 1.2; g.stroke();
+
+  // глянцевый блик вдоль купола
+  const gl = g.createLinearGradient(-HW * 0.3, -HL * 0.9, HW * 0.05, -HL * 0.2);
+  gl.addColorStop(0, 'rgba(220,245,255,0.42)');
+  gl.addColorStop(1, 'rgba(220,245,255,0)');
+  g.fillStyle = gl;
+  g.beginPath();
+  g.ellipse(-HW * 0.12, -HL * 0.58, HW * 0.13, HL * 0.30, -0.12, 0, TAU);
+  g.fill();
+
+  // поперечные пластины
+  for (let i = 1; i <= 3; i++) {
+    const t = i / 4.4;
+    const yy = -HL * (0.30 + t * 0.42);
+    const wQ = HW * (0.52 - t * 0.20);
+    g.strokeStyle = 'rgba(6,12,17,0.55)'; g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(-wQ, yy + 2); g.quadraticCurveTo(0, yy + 4.5, wQ, yy + 2); g.stroke();
+  }
+
+  // два шипа назад
+  g.fillStyle = low;
+  for (const side of [-1, 1]) {
+    g.beginPath();
+    g.moveTo(side * HW * 0.30, -HL * 0.10);
+    g.lineTo(side * HW * 0.62, HL * 0.10);
+    g.lineTo(side * HW * 0.34, -HL * 0.02);
+    g.closePath(); g.fill();
+  }
+
+  /* пасть и зубы */
+  g.fillStyle = '#04080b';
+  g.beginPath();
+  g.moveTo(-HW * 0.20, -HL * 0.02);
+  g.quadraticCurveTo(0, HL * 0.10, HW * 0.20, -HL * 0.02);
+  g.quadraticCurveTo(0, -HL * 0.10, -HW * 0.20, -HL * 0.02);
+  g.closePath(); g.fill();
+  g.fillStyle = 'rgba(230,245,255,0.9)';
+  for (let k = -2; k <= 2; k++) {
+    const tx = k * HW * 0.072;
+    g.beginPath();
+    g.moveTo(tx - 1.1, -HL * 0.03);
+    g.lineTo(tx, HL * 0.03);
+    g.lineTo(tx + 1.1, -HL * 0.03);
+    g.closePath(); g.fill();
+  }
+  const mg = g.createRadialGradient(0, 0, 1, 0, 0, HW * 0.4);
+  mg.addColorStop(0, accent); mg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.globalAlpha = 0.20; g.fillStyle = mg;
+  g.beginPath(); g.arc(0, 0, HW * 0.4, 0, TAU); g.fill(); g.globalAlpha = 1;
+
+  /* глаза-щели */
+  for (const side of [-1, 1]) {
+    g.strokeStyle = 'rgba(2,6,9,0.9)'; g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(side * HW * 0.40, -HL * 0.44);
+    g.lineTo(side * HW * 0.18, -HL * 0.40);
+    g.stroke();
+    g.strokeStyle = accent; g.globalAlpha = 0.8; g.lineWidth = 1.1;
+    g.beginPath();
+    g.moveTo(side * HW * 0.38, -HL * 0.435);
+    g.lineTo(side * HW * 0.20, -HL * 0.405);
+    g.stroke(); g.globalAlpha = 1;
+  }
+  g.restore();
+
+  g.restore();
+}
+function side0(v) { return v; }
 
 function drawQueen(g, opts) {
   const o = opts || {};
@@ -505,19 +558,19 @@ const Sprites = {
 
     SPR.grunt = alienPair(112, {
       bw: 18, bh: 24, headL: 30, headW: 13,
-      accent: '#8dff72', tail: 5, bodyHi: '#3a6a4e'
+      accent: '#a6ff86', tail: 6, bodyHi: '#5d9a74', bodyMid: '#2f4d3f', bodyLow: '#0d1a16'
     });
     SPR.swarm = alienPair(88, {
       bw: 12, bh: 15, headL: 20, headW: 11,
-      accent: '#d4ff5c', tail: 4, limbW: 4, dark: '#0e1a10', bodyHi: '#3a5c2c'
+      accent: '#dcff78', tail: 5, limbW: 4, dark: '#12210f', bodyHi: '#5c873f', bodyMid: '#31452a', bodyLow: '#0f1a0c'
     });
     SPR.shooter = alienPair(112, {
       bw: 17, bh: 23, headL: 29, headW: 13, spike: 3,
-      accent: '#5effb0', tail: 5, bodyHi: '#356b52'
+      accent: '#7dffc4', tail: 6, bodyHi: '#55997a', bodyMid: '#2a4a3f', bodyLow: '#0c1a18'
     });
     SPR.tank = alienPair(140, {
       bw: 26, bh: 32, headL: 28, headW: 17, spike: 5,
-      accent: '#3dff9a', tail: 7, limbW: 7, bodyHi: '#43745a'
+      accent: '#63ffb4', tail: 9, limbW: 7, bodyHi: '#63a385', bodyMid: '#325045', bodyLow: '#0e1b19'
     });
     SPR.boss = [mkSprite(196, drawQueen)];
     SPR.matka = [mkSprite(200, g => drawQueen(g, {
