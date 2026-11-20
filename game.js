@@ -1295,12 +1295,14 @@ const Game = {
       const pool = ['shotgun', 'smg', 'laser', 'rocket', 'plasma'].filter(w => this.player.unlocked[w]);
       if (pool.length) {
         const w = pick(pool);
-        this.pickups.push({ type: 'ammo', w: w, x: e.x + rand(-10, 10), y: e.y + rand(-10, 10), r: 11, v: AMMO_DROP[w], vx: rand(-30, 30), vy: rand(-30, 30), t: 0 });
+        const sp1 = this.freeSpotAround(e.x + rand(-10, 10), e.y + rand(-10, 10), 14);
+        this.pickups.push({ type: 'ammo', w: w, x: sp1.x, y: sp1.y, r: 11, v: AMMO_DROP[w], vx: rand(-30, 30), vy: rand(-30, 30), t: 0 });
       }
     }
     const nCoins = e.coins;
     for (let k = 0; k < nCoins; k++) {
-      this.pickups.push({ type: 'coin', x: e.x + rand(-14, 14), y: e.y + rand(-14, 14), r: 9, v: 1, vx: rand(-40, 40), vy: rand(-40, 40), t: 0 });
+      const sp2 = this.freeSpotAround(e.x + rand(-14, 14), e.y + rand(-14, 14), 10);
+      this.pickups.push({ type: 'coin', x: sp2.x, y: sp2.y, r: 9, v: 1, vx: rand(-40, 40), vy: rand(-40, 40), t: 0 });
     }
     const nXp = Math.max(1, Math.round(e.xp / 2));
     for (let k = 0; k < nXp; k++) {
@@ -1321,7 +1323,8 @@ const Game = {
     if (e.type === 'boss' || e.boss) {
       this.mines.length = 0;   // с гибелью босса его мины обезвреживаются
       this.cam.shake = 12;
-      this.pickups.push({ type: 'chest', x: e.x, y: e.y, r: 20, v: 1, vx: 0, vy: 0, t: 0 });
+      const spc = this.freeSpotAround(e.x, e.y, 24);
+      this.pickups.push({ type: 'chest', x: spc.x, y: spc.y, r: 20, v: 1, vx: 0, vy: 0, t: 0 });
       UI.toast((e.bossName || 'СТРАЖ') + ' УНИЧТОЖЕН');
     }
   },
@@ -1385,7 +1388,8 @@ const Game = {
     this.kills++;
     const coins = 40 + this.roomIndex * 10;
     this.coins += coins;
-    this.pickups.push({ type: 'chest', x: r.w / 2, y: r.h / 2 - 40, r: 20, v: 1, vx: 0, vy: 0, t: 0 });
+    const spb = this.freeSpotAround(r.w / 2, r.h / 2 - 40, 24);
+    this.pickups.push({ type: 'chest', x: spb.x, y: spb.y, r: 20, v: 1, vx: 0, vy: 0, t: 0 });
     r.cleared = true;
     r.doors = [
       { x: r.w / 2 - 150, y: 60, r: 44, type: 'normal', pulse: 0 },
@@ -1494,6 +1498,30 @@ const Game = {
     UI.showGameOver();
   },
 
+  /* если точка дропа попала в стену/ящик — ищем свободное место рядом */
+  freeSpotAround(x, y, rad) {
+    return this.spawnSafe(x, y, rad);
+  },
+
+  spawnSafe(x, y, rad) {
+    const blocked = (px, py) => {
+      for (const pr of this.props) {
+        if (pr.dead || !pr.solid) continue;
+        if (px > pr.x - rad && px < pr.x + pr.w + rad && py > pr.y - rad && py < pr.y + pr.h + rad) return true;
+      }
+      return false;
+    };
+    if (!blocked(x, y)) return { x, y };
+    for (let r = 26; r <= 200; r += 24) {
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * TAU + r * 0.7;
+        const nx = x + Math.cos(a) * r, ny = y + Math.sin(a) * r;
+        if (!blocked(nx, ny)) return { x: nx, y: ny };
+      }
+    }
+    return { x, y };
+  },
+
   updatePickups(dt) {
     const p = this.player;
     for (let i = this.pickups.length - 1; i >= 0; i--) {
@@ -1502,7 +1530,8 @@ const Game = {
       k.x += (k.vx || 0) * dt; k.y += (k.vy || 0) * dt;
       k.vx *= 0.92; k.vy *= 0.92;
       const d = dst(k, p);
-      const magnet = k.type === 'chest' ? 0 : (this.room.cleared ? 3000 : 110);
+      // после зачистки комнаты подбираем всё автоматически; в бою — в радиусе
+      const magnet = k.type === 'chest' ? 0 : (this.room.cleared ? 6000 : 150);
       if (d < magnet) {
         const pull = (1 - d / magnet) * 420;
         const ux = (p.x - k.x) / (d || 1), uy = (p.y - k.y) / (d || 1);
