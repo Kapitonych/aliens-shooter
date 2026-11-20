@@ -409,8 +409,8 @@ const UI = {
     const p = Game.player || {};
     const wname = (WEAPONS[p.weapon] || {}).nm || 'винтовка';
     const txt = isWin
-      ? 'Зачистил станцию в Aliens Shooter: все ' + MAX_SECTOR + ' секторов, ' + wname + ', ' + Game.kills + ' убийств.'
-      : 'Дошёл до ' + Game.roomIndex + '-го сектора в Aliens Shooter. Убил ' + Game.kills + '. Слабо?';
+      ? 'Зачистил станцию в «Секторе 15»: все ' + MAX_SECTOR + ' секторов, ' + wname + ', ' + Game.kills + ' убийств.'
+      : 'Дошёл до ' + Game.roomIndex + '-го сектора в «Секторе 15». Убил ' + Game.kills + '. Слабо?';
     const url = 'https://t.me/AliansShooting_bot';
     const link = 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(txt);
     try {
