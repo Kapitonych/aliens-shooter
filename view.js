@@ -209,6 +209,13 @@ const UI = {
   },
 
   showScreen(id) {
+    // поверх арены: экран паузы/меню, иначе кнопки не нажать
+    const ov = this.el && this.el.boss3dOverlay;
+    if (ov) {
+      ov.style.zIndex = id ? '80' : '60';
+      // когда открыт экран, саму арену убираем из кадра — она перехватывает касания
+      if (id) ov.classList.add('menu'); else ov.classList.remove('menu');
+    }
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     if (id) {
       const el = document.getElementById(id);
@@ -497,6 +504,8 @@ const UI = {
   closeBoss3D() {
     const el = this.el;
     if (!el.boss3dOverlay) return;
+    // гасим цикл внутри iframe, иначе он продолжает жечь кадры в фоне
+    try { el.boss3dFrame.contentWindow.postMessage({ type: 'boss3d:stop' }, '*'); } catch (e) {}
     el.boss3dOverlay.classList.remove('on');
     el.boss3dOverlay.style.width = '';
     el.boss3dOverlay.style.height = '';

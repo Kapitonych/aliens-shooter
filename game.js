@@ -1357,6 +1357,7 @@ const Game = {
     };
     if (!UI.openBoss3D || !UI.openBoss3D(i, bt, hp, load)) return false;
     this.boss3dType = bt;
+    this.roomBoss3D = true;         // пауза и «в меню» должны знать, что мы в арене
     this.state = 'boss3d';
     UI.toast('СЕКТОР ' + i + ' · БОСС · 3D');
     return true;
@@ -1364,6 +1365,7 @@ const Game = {
 
   finishBoss3D(win, data) {
     UI.closeBoss3D();
+    this.roomBoss3D = false;
     Input.reset();                  // после iframe события пальца терялись
     const r = this.room;
     const p = this.player;
@@ -1397,8 +1399,16 @@ const Game = {
     saveGame();
   },
 
+  /* пауза для 3D: арену тоже ставим на паузу, чтобы бой не шёл за меню */
+  pauseBoss3D(flag) {
+    const el = UI.el && UI.el.boss3dFrame;
+    if (!el || !el.contentWindow) return;
+    try { el.contentWindow.postMessage({ type: flag ? 'boss3d:pause' : 'boss3d:resume' }, '*'); } catch (e) {}
+  },
+
   quitBoss3D() {
     UI.closeBoss3D();
+    this.roomBoss3D = false;
     Input.reset();                  // иначе стик остаётся зажатым после iframe
     this.state = 'playing';
     UI.showHud(true);
@@ -2079,9 +2089,37 @@ const Game = {
     this.cam.y = clamp(this.cam.y, 0, Math.max(0, this.room.h - VH));
   },
 
-  pause() { if (this.state === 'playing') { this.state = 'pause'; UI.updatePauseInfo(); UI.showScreen('screen-pause'); } },
-  resume() { if (this.state === 'pause') { this.state = 'playing'; UI.showScreen(null); } },
-  toMenu() { this.state = 'menu'; Sfx.bossTheme(false); Sfx.ambient(false); saveGame(); UI.showScreen('screen-menu'); UI.refreshMenu(); UI.showHud(false); }
+  pause() {
+    if (this.state === 'playing') { this.state = 'pause'; UI.updatePauseInfo(); UI.showScreen('screen-pause'); }
+    else if (this.state === 'boss3d') {
+      this.state = 'pause'; this.pauseBoss3D(true);
+      UI.updatePauseInfo(); UI.showScreen('screen-pause');
+    }
+  },
+  resume() {
+    if (this.state !== 'pause') return;
+    if (UI.preview3d || (this.room && this.room.boss && Settings.boss3d && this.roomBoss3D)) {
+      UI.preview3d = UI.preview3d;
+      this.state = 'boss3d';
+      UI.showScreen(null);          // снимет класс menu с оверлея
+      this.pauseBoss3D(false);
+      return;
+    }
+    this.state = 'playing'; UI.showScreen(null);
+  },
+  toMenu() {
+    // если выходим из меню паузы во время 3D-боя — закрываем арену и чистим ввод
+    if (this.state === 'boss3d' || this.state === 'pause' || UI.preview3d) {
+      UI.preview3d = false;
+      if (this.roomBoss3D) UI.closeBoss3D();
+      this.roomBoss3D = false;
+    }
+    Input.reset();
+    this.state = 'menu';
+    Sfx.bossTheme(false); Sfx.ambient(false);
+    saveGame();
+    UI.showScreen('screen-menu'); UI.refreshMenu(); UI.showHud(false);
+  }
 };
 
 /* ---------------- магазин между секторами ---------------- */

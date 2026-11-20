@@ -1193,6 +1193,8 @@ function drawWeapon() {
 let last = performance.now(), frames = 0, fpsT = 0;
 function loop(t) {
   const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  // iframe в фоне продолжает жечь кадры — если вкладка скрыта, не рисуем вовсе
+  if (document.hidden) { requestAnimationFrame(loop); return; }
   if (!PAUSED) step(dt);
   render();
   frames++; fpsT += dt;
@@ -1206,8 +1208,17 @@ function loop(t) {
     document.getElementById('bossBox').style.display = 'block';
     document.getElementById('bossHp').style.width = Math.max(0, B.hp / B.maxHp * 100) + '%';
   }
-  requestAnimationFrame(loop);
+  window.__raf = requestAnimationFrame(loop);
 }
+
+window.addEventListener('message', e => {
+  const d = e.data || {};
+  if (d.type === 'boss3d:stop') { window.__stopped = true; if (window.__raf) cancelAnimationFrame(window.__raf); }
+  if (d.type === 'boss3d:pause') { PAUSED = true; }
+  if (d.type === 'boss3d:resume') { PAUSED = false; }
+});
+window.addEventListener('pagehide', () => { window.__stopped = true; });
+window.addEventListener('beforeunload', () => { window.__stopped = true; });
 
 const __t0 = performance.now();
 function GameTime() { return (performance.now() - __t0) / 1000; }
